@@ -1,6 +1,7 @@
 import { PrismaClient } from '../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-
+import bcrypt from 'bcrypt';
+import env from '../config/env';
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!,
 });
@@ -8,29 +9,37 @@ const adapter = new PrismaPg({
 const prisma = new PrismaClient({
   adapter,
 });
-
 async function main() {
   // Create multiple users
+  const hasPassword = await bcrypt.hash(
+    'password123',
+    Number(env.BCRYPT_SALT_ROUNDS)
+  );
   await prisma.user.createMany({
     data: [
-      { email: 'alice@example.com', name: 'Alice', password: 'password123' },
-      { email: 'bob@example.com', name: 'Bob', password: 'password123' },
+      {
+        name: 'Alice',
+        email: 'alice@example.com',
+        password: hasPassword,
+      },
+      { email: 'bob@example.com', name: 'Bob', password: hasPassword },
+
       {
         email: 'charlie@example.com',
         name: 'Charlie',
-        password: 'password123',
+        password: hasPassword,
       },
-      { email: 'diana@example.com', name: 'Diana', password: 'password123' },
-      { email: 'eve@example.com', name: 'Eve', password: 'password123' },
-      { email: 'frank@example.com', name: 'Frank', password: 'password123' },
-      { email: 'grace@example.com', name: 'Grace', password: 'password123' },
-      { email: 'henry@example.com', name: 'Henry', password: 'password123' },
+      { email: 'diana@example.com', name: 'Diana', password: hasPassword },
+      { email: 'eve@example.com', name: 'Eve', password: hasPassword },
+      { email: 'frank@example.com', name: 'Frank', password: hasPassword },
+      { email: 'grace@example.com', name: 'Grace', password: hasPassword },
+      { email: 'henry@example.com', name: 'Henry', password: hasPassword },
       {
         email: 'isabella@example.com',
         name: 'Isabella',
-        password: 'password123',
+        password: hasPassword,
       },
-      { email: 'jack@example.com', name: 'Jack', password: 'password123' },
+      { email: 'jack@example.com', name: 'Jack', password: hasPassword },
     ],
     skipDuplicates: true, // prevents errors if you run the seed multiple times
   });

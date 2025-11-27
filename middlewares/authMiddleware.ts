@@ -37,7 +37,7 @@ class AuthMiddleware {
             )
           );
       }
-      const secret = env.JWT_SECRET_KEY as string;
+      const secret = env.JWT_SECRET as string;
       if (!secret) {
         throw new Error('Jwt secret key is missing in .env file');
       }
