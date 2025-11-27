@@ -29,7 +29,8 @@ class AuthValidation {
         .trim(),
       password: z
         .string({ message: 'Password is required' })
-        .min(1, { message: 'Password is required' }),
+        .min(8, { message: 'Password must be at least 8 characters' })
+        .max(50, { message: 'Password must not exceed 50 characters' }),
     }),
   };
 }

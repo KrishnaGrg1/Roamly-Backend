@@ -125,7 +125,7 @@ class AuthController {
         throw new Error('JWT secret is not configured');
       }
 
-      const token = jwt.sign({ id: user.id, email: user.email }, secret, {
+      const token = jwt.sign({ id: user.id }, secret, {
         expiresIn: this.TOKEN_EXPIRY,
       });
 
