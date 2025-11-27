@@ -1,0 +1,187 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LocationCategory {
+  HOTEL
+  RESTAURANT
+  ATTRACTION
+  TREKKING
+  VIEWPOINT
+  SHOPPING
+  OTHER
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts         Post[]
+  bookmarks     Bookmark[]
+  reviews       Review[]
+  travelHistory TravelHistory[]
+  comments      Comment[]
+  likes         Like[]
+  routes        Route[]
+}
+
+enum MediaType {
+  PHOTO
+  VIDEO
+}
+
+model Post {
+  id         String    @id @default(uuid())
+  userId     String
+  caption    String?
+  mediaUrl   String // Cloudinary URL
+  mediaType  MediaType
+  locationId String? // link to place/hotel/restaurant
+  createdAt  DateTime  @default(now())
+
+  user      User       @relation(fields: [userId], references: [id])
+  location  Location?  @relation(fields: [locationId], references: [id])
+  comments  Comment[]
+  likes     Like[]
+  bookmarks Bookmark[]
+}
+
+model Bookmark {
+  id         String   @id @default(uuid())
+  userId     String
+  postId     String?
+  locationId String?
+  createdAt  DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id])
+  post     Post?     @relation(fields: [postId], references: [id])
+  location Location? @relation(fields: [locationId], references: [id])
+}
+
+model Location {
+  id          String           @id @default(uuid())
+  name        String
+  category    LocationCategory // hotel, restaurant, attraction, etc.
+  description String?
+  latitude    Float
+  longitude   Float
+  address     String?
+  priceRange  String? // optional
+  rating      Float? // avg rating
+  createdAt   DateTime         @default(now())
+
+  posts        Post[]
+  businessInfo BusinessInfo?
+  reviews      Review[]
+  embeddings   LocationEmbedding?
+  bookmarks    Bookmark[]
+  promotions   Promotion[]
+}
+
+model BusinessInfo {
+  id            String   @id @default(uuid())
+  locationId    String   @unique
+  phone         String?
+  website       String?
+  checkIn       String?
+  checkOut      String?
+  pricePerNight Float?
+  menuUrl       String?
+  images        String[] // Cloudinary list
+
+  location Location @relation(fields: [locationId], references: [id])
+}
+
+model LocationEmbedding {
+  id         String  @id @default(uuid())
+  locationId String  @unique
+  embedding  Float[] // vector
+  metadata   Json?
+
+  location Location @relation(fields: [locationId], references: [id])
+}
+
+model TravelHistory {
+  id          String   @id @default(uuid())
+  userId      String
+  source      String
+  destination String
+  date        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  userId     String
+  locationId String
+  rating     Int // 1–5
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+}
+
+model Promotion {
+  id          String   @id @default(uuid())
+  locationId  String
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime @default(now())
+
+  location Location @relation(fields: [locationId], references: [id])
+}
+
+model Route {
+  id          String   @id @default(uuid())
+  userId      String
+  sourceLat   Float
+  sourceLng   Float
+  destLat     Float
+  destLng     Float
+  distanceKm  Float?
+  durationMin Float?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
