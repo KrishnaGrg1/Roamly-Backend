@@ -20,7 +20,7 @@ bun install
 To run:
 
 ```bash
-bun run index.ts
+bun dev
 ```
 
 ## Need to do
@@ -49,5 +49,7 @@ Params for /nearby:
 | POST   | /ai/suggest //suggest places based on user's location + interests |
 | POST   | //ai/generate-embedding // generate vector for a location         |
 | GET    | /ai/recommend-locations // personalized recommended places        |
+
+---
 
 This project was created using `bun init` in bun v1.2.23. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
