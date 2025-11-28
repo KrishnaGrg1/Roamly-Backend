@@ -8,16 +8,13 @@ import {
   makeSuccessResponse,
 } from '../helpers/standardResponse';
 import type { PrismaClient } from '../generated/prisma/client';
+import type { AuthRequest } from '../middlewares/auth.middleware';
 
 class AuthController {
   private readonly SALT_ROUNDS = Number(env.BCRYPT_SALT_ROUNDS);
   private readonly TOKEN_EXPIRY = '7d';
-
   constructor(private readonly prisma: PrismaClient) {}
 
-  /**
-   * Register a new user
-   */
   public registerUser = async (req: Request, res: Response): Promise<void> => {
     const { email, name, password } = req.body;
 
@@ -75,9 +72,6 @@ class AuthController {
     }
   };
 
-  /**
-   * Login a user
-   */
   public loginUser = async (req: Request, res: Response): Promise<void> => {
     const { email, password } = req.body;
 
@@ -138,6 +132,48 @@ class AuthController {
           makeErrorResponse(
             err instanceof Error ? err : new Error('Login failed'),
             'Login failed',
+            500
+          )
+        );
+    }
+  };
+
+  public getMe = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const existingUser = await this.prisma.user.findUnique({
+        where: {
+          id: req?.userId,
+        },
+      });
+      if (!existingUser) {
+        res
+          .status(404)
+          .json(
+            makeErrorResponse(
+              new Error('User not found'),
+              'User not found',
+              404
+            )
+          );
+        return;
+      }
+      res
+        .status(200)
+        .json(
+          makeSuccessResponse(
+            existingUser,
+            'Successfully retrieved user data',
+            200
+          )
+        );
+    } catch (err) {
+      console.error('Registration error:', err);
+      res
+        .status(500)
+        .json(
+          makeErrorResponse(
+            err instanceof Error ? err : new Error('Registration failed'),
+            'Registration failed',
             500
           )
         );
