@@ -4,42 +4,42 @@ import type { AuthRequest } from '../middlewares/auth.middleware';
 import type { PrismaClient } from '../generated/prisma/client';
 import {
   makeSuccessResponse,
-  makeErrorResponse,
+  HttpErrors,
+  HttpSuccess,
 } from '../helpers/standardResponse';
+import { validateFiles, FILE_CONSTRAINTS } from '../helpers/fileValidator';
 import {
-  validateFile,
-  validateFiles,
-  fileToDataUri,
-  FILE_CONSTRAINTS,
-} from '../helpers/fileValidator';
-import cloudinary from '../config/cloudnary';
+  parsePaginationParams,
+  buildCursorQuery,
+  buildPaginationResponse,
+} from '../helpers/pagination';
+import {
+  uploadMultipleToCloudinary,
+  deleteFromCloudinary,
+  CLOUDINARY_PRESETS,
+} from '../helpers/cloudinary';
 import { prisma } from '../config/db';
-import { success } from 'zod';
 
 class PostController {
   constructor(private readonly prisma: PrismaClient) {}
 
+  /**
+   * Create a new post with images
+   * POST /posts
+   */
   public createPost = async (
     req: AuthRequest,
     res: Response
   ): Promise<void> => {
     try {
       const userId = req.userId;
-      const filesObj = req.files?.images;
 
       if (!userId) {
-        res
-          .status(401)
-          .json(
-            makeErrorResponse(
-              new Error('Unauthorized'),
-              'Authentication required',
-              401
-            )
-          );
+        HttpErrors.unauthorized(res);
         return;
       }
 
+      const filesObj = req.files?.images;
       const validation = validateFiles(
         filesObj,
         {
@@ -51,15 +51,7 @@ class PostController {
       );
 
       if (!validation.isValid) {
-        res
-          .status(400)
-          .json(
-            makeErrorResponse(
-              new Error(validation.error),
-              validation.error || 'Invalid files',
-              400
-            )
-          );
+        HttpErrors.badRequest(res, validation.error || 'Invalid files');
         return;
       }
 
@@ -67,45 +59,24 @@ class PostController {
       const files = Array.isArray(filesObj) ? filesObj : [filesObj!];
 
       // Upload all images to Cloudinary in parallel
-      const uploadPromises = files.map(async (file, index) => {
-        const dataUri = fileToDataUri(file);
+      const uploadedImages = await uploadMultipleToCloudinary(
+        files,
+        CLOUDINARY_PRESETS.POST,
+        (index) => `post_${userId}_${Date.now()}_${index}`
+      );
 
-        const cloudResult = await cloudinary.uploader.upload(dataUri, {
-          folder: 'roamly/posts',
-          transformation: [
-            {
-              width: 1200,
-              height: 1200,
-              crop: 'limit',
-              quality: 'auto:good',
-              fetch_format: 'auto',
-            },
-          ],
-          public_id: `post_${userId}_${Date.now()}_${index}`,
-        });
-
-        return {
-          url: cloudResult.secure_url,
-          publicId: cloudResult.public_id,
-          originalName: file.name,
-          size: file.size,
-        };
-      });
-
-      const uploadedImages = await Promise.all(uploadPromises);
-
-      // Save to database - create a post for each image
-      const caption = req.body.caption?.trim() || null;
-      const locationId = req.body.locationId?.trim() || null;
+      // Save to database
+      const caption = req.body?.caption?.trim() || null;
+      const locationId = req.body?.locationId?.trim() || null;
 
       const dbPromises = uploadedImages.map((image) =>
         this.prisma.post.create({
           data: {
-            userId: userId,
+            userId,
             mediaUrl: image.url,
             mediaType: 'PHOTO',
-            caption: caption,
-            locationId: locationId,
+            caption,
+            locationId,
           },
           select: {
             id: true,
@@ -136,594 +107,28 @@ class PostController {
         )
       );
     } catch (err) {
-      console.error('Post images upload error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Upload failed'),
-            'Failed to upload post images',
-            500
-          )
-        );
+      HttpErrors.serverError(res, err, 'Create post');
     }
   };
-  public extractPublicId(url: string): string | null {
-    try {
-      const parts = url.split('/');
-      const uploadIndex = parts.findIndex((part) => part === 'upload');
-      if (uploadIndex !== -1 && parts.length > uploadIndex + 1) {
-        const pathAfterUpload = parts.slice(uploadIndex + 2).join('/');
-        return pathAfterUpload.replace(/\.[^/.]+$/, '');
-      }
-      return null;
-    } catch (error) {
-      console.error('Error extracting public_id:', error);
-      return null;
-    }
-  }
+
+  /**
+   * Get post by ID
+   * GET /posts/:id
+   */
   public getPostById = async (
     req: AuthRequest,
     res: Response
   ): Promise<void> => {
     try {
-      const existingPost = await this.prisma.post.findUnique({
-        where: {
-          id: req.params.id,
-        },
-      });
-      if (!existingPost) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('Post not found!'),
-              'Post not found',
-              404
-            )
-          );
-        return;
-      }
-      res
-        .status(200)
-        .json(
-          makeSuccessResponse(existingPost, 'Post retrieved successfully', 200)
-        );
-      return;
-    } catch (err) {
-      console.error('Post images upload error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Upload failed'),
-            'Failed to upload post images',
-            500
-          )
-        );
-    }
-  };
-
-  public deletePostById = async (
-    req: AuthRequest,
-    res: Response
-  ): Promise<void> => {
-    try {
-      const existingPost = await this.prisma.post.findUnique({
-        where: {
-          id: req.params.id,
-          userId: req?.userId,
-        },
-      });
-      if (!existingPost) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('Post not found!'),
-              'Post not found',
-              404
-            )
-          );
-        return;
-      }
-      await this.prisma.post.delete({
-        where: {
-          id: req.params.id,
-          userId: req?.userId,
-        },
-      });
-      res.status(200).json(
-        makeSuccessResponse(
-          {
-            success: true,
-            id: req?.params.id,
-          },
-          'Post deleted successfully',
-          200
-        )
-      );
-      return;
-    } catch (err) {
-      console.error('Post images upload error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Upload failed'),
-            'Failed to upload post images',
-            500
-          )
-        );
-    }
-  };
-
-  /**
-   * Like a post
-   * POST /posts/:id/like
-   */
-  public likePost = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-      const userId = req.userId;
       const postId = req.params.id;
 
-      if (!userId) {
-        res
-          .status(401)
-          .json(
-            makeErrorResponse(
-              new Error('Unauthorized'),
-              'Authentication required',
-              401
-            )
-          );
-        return;
-      }
-
       if (!postId) {
-        res
-          .status(400)
-          .json(
-            makeErrorResponse(
-              new Error('Post ID required'),
-              'Post ID is required',
-              400
-            )
-          );
+        HttpErrors.badRequest(res, 'Post ID is required');
         return;
       }
 
-      // Check if post exists
-      const existingPost = await this.prisma.post.findUnique({
+      const post = await this.prisma.post.findUnique({
         where: { id: postId },
-      });
-
-      if (!existingPost) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('Post not found!'),
-              'Post not found',
-              404
-            )
-          );
-        return;
-      }
-
-      // Check if user already liked this post
-      const existingLike = await this.prisma.like.findFirst({
-        where: {
-          postId: postId,
-          userId: userId,
-        },
-      });
-
-      if (existingLike) {
-        res
-          .status(409)
-          .json(
-            makeErrorResponse(
-              new Error('Already liked'),
-              'You have already liked this post',
-              409
-            )
-          );
-        return;
-      }
-
-      // Create like
-      await this.prisma.like.create({
-        data: {
-          postId: postId,
-          userId: userId,
-        },
-      });
-
-      // Get updated like count
-      const likeCount = await this.prisma.like.count({
-        where: { postId: postId },
-      });
-
-      res.status(201).json(
-        makeSuccessResponse(
-          {
-            liked: true,
-            postId: postId,
-            likeCount: likeCount,
-          },
-          'Post liked successfully',
-          201
-        )
-      );
-    } catch (err) {
-      console.error('Like post error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Like failed'),
-            'Failed to like post',
-            500
-          )
-        );
-    }
-  };
-
-  /**
-   * Unlike a post
-   * DELETE /posts/:id/like
-   */
-  public unlikePost = async (
-    req: AuthRequest,
-    res: Response
-  ): Promise<void> => {
-    try {
-      const userId = req.userId;
-      const postId = req.params.id;
-
-      if (!userId) {
-        res
-          .status(401)
-          .json(
-            makeErrorResponse(
-              new Error('Unauthorized'),
-              'Authentication required',
-              401
-            )
-          );
-        return;
-      }
-
-      if (!postId) {
-        res
-          .status(400)
-          .json(
-            makeErrorResponse(
-              new Error('Post ID required'),
-              'Post ID is required',
-              400
-            )
-          );
-        return;
-      }
-
-      // Check if post exists
-      const existingPost = await this.prisma.post.findUnique({
-        where: { id: postId },
-      });
-
-      if (!existingPost) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('Post not found!'),
-              'Post not found',
-              404
-            )
-          );
-        return;
-      }
-
-      // Check if user has liked this post
-      const existingLike = await this.prisma.like.findFirst({
-        where: {
-          postId: postId,
-          userId: userId,
-        },
-      });
-
-      if (!existingLike) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('Like not found'),
-              'You have not liked this post',
-              404
-            )
-          );
-        return;
-      }
-
-      // Delete like
-      await this.prisma.like.delete({
-        where: { id: existingLike.id },
-      });
-
-      // Get updated like count
-      const likeCount = await this.prisma.like.count({
-        where: { postId: postId },
-      });
-
-      res.status(200).json(
-        makeSuccessResponse(
-          {
-            liked: false,
-            postId: postId,
-            likeCount: likeCount,
-          },
-          'Post unliked successfully',
-          200
-        )
-      );
-    } catch (err) {
-      console.error('Unlike post error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Unlike failed'),
-            'Failed to unlike post',
-            500
-          )
-        );
-    }
-  };
-
-  /**
-   * Bookmark a post
-   * POST /posts/:id/bookmark
-   */
-  public bookmarkPost = async (
-    req: AuthRequest,
-    res: Response
-  ): Promise<void> => {
-    try {
-      const userId = req.userId;
-      const postId = req.params.id;
-
-      if (!userId) {
-        res
-          .status(401)
-          .json(
-            makeErrorResponse(
-              new Error('Unauthorized'),
-              'Authentication required',
-              401
-            )
-          );
-        return;
-      }
-
-      if (!postId) {
-        res
-          .status(400)
-          .json(
-            makeErrorResponse(
-              new Error('Post ID required'),
-              'Post ID is required',
-              400
-            )
-          );
-        return;
-      }
-
-      // Check if post exists
-      const existingPost = await this.prisma.post.findUnique({
-        where: { id: postId },
-      });
-
-      if (!existingPost) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('Post not found!'),
-              'Post not found',
-              404
-            )
-          );
-        return;
-      }
-
-      // Check if user already bookmarked this post
-      const existingBookmark = await this.prisma.bookmark.findFirst({
-        where: {
-          postId: postId,
-          userId: userId,
-        },
-      });
-
-      if (existingBookmark) {
-        res
-          .status(409)
-          .json(
-            makeErrorResponse(
-              new Error('Already bookmarked'),
-              'You have already bookmarked this post',
-              409
-            )
-          );
-        return;
-      }
-
-      // Create bookmark
-      const bookmark = await this.prisma.bookmark.create({
-        data: {
-          postId: postId,
-          userId: userId,
-        },
-        select: {
-          id: true,
-          postId: true,
-          userId: true,
-          createdAt: true,
-        },
-      });
-
-      res.status(201).json(
-        makeSuccessResponse(
-          {
-            bookmarked: true,
-            bookmark: bookmark,
-          },
-          'Post bookmarked successfully',
-          201
-        )
-      );
-    } catch (err) {
-      console.error('Bookmark post error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Bookmark failed'),
-            'Failed to bookmark post',
-            500
-          )
-        );
-    }
-  };
-
-  /**
-   * Remove bookmark from a post
-   * DELETE /posts/:id/bookmark
-   */
-  public unbookmarkPost = async (
-    req: AuthRequest,
-    res: Response
-  ): Promise<void> => {
-    try {
-      const userId = req.userId;
-      const postId = req.params.id;
-
-      if (!userId) {
-        res
-          .status(401)
-          .json(
-            makeErrorResponse(
-              new Error('Unauthorized'),
-              'Authentication required',
-              401
-            )
-          );
-        return;
-      }
-
-      if (!postId) {
-        res
-          .status(400)
-          .json(
-            makeErrorResponse(
-              new Error('Post ID required'),
-              'Post ID is required',
-              400
-            )
-          );
-        return;
-      }
-
-      // Check if post exists
-      const existingPost = await this.prisma.post.findUnique({
-        where: { id: postId },
-      });
-
-      if (!existingPost) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('Post not found!'),
-              'Post not found',
-              404
-            )
-          );
-        return;
-      }
-
-      // Check if user has bookmarked this post
-      const existingBookmark = await this.prisma.bookmark.findFirst({
-        where: {
-          postId: postId,
-          userId: userId,
-        },
-      });
-
-      if (!existingBookmark) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('Bookmark not found'),
-              'You have not bookmarked this post',
-              404
-            )
-          );
-        return;
-      }
-
-      // Delete bookmark
-      await this.prisma.bookmark.delete({
-        where: { id: existingBookmark.id },
-      });
-
-      res.status(200).json(
-        makeSuccessResponse(
-          {
-            bookmarked: false,
-            postId: postId,
-          },
-          'Bookmark removed successfully',
-          200
-        )
-      );
-    } catch (err) {
-      console.error('Unbookmark post error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Unbookmark failed'),
-            'Failed to remove bookmark',
-            500
-          )
-        );
-    }
-  };
-
-  /**
-   * Get posts feed with cursor pagination
-   * GET /posts/feed?limit=10&cursor=postId
-   * Best for reels/infinite scroll - smooth scrolling experience
-   */
-  public getFeed = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-      const userId = req.userId;
-      const limit = Math.min(Number(req.query.limit) || 10, 50); // Max 50 per request
-      const cursor = req.query.cursor as string | undefined;
-
-      // Build cursor query
-      const cursorQuery = cursor ? { id: cursor } : undefined;
-
-      const posts = await this.prisma.post.findMany({
-        take: limit,
-        skip: cursor ? 1 : 0, // Skip the cursor post itself
-        cursor: cursorQuery,
-        orderBy: {
-          createdAt: 'desc',
-        },
         include: {
           user: {
             select: {
@@ -749,26 +154,391 @@ class PostController {
         },
       });
 
-      // Check if current user liked/bookmarked each post
-      let postsWithUserInteraction = posts;
+      if (!post) {
+        HttpErrors.notFound(res, 'Post');
+        return;
+      }
 
-      if (userId) {
+      // Check if current user liked/bookmarked this post
+      let isLiked = false;
+      let isBookmarked = false;
+
+      if (req.userId) {
+        const [like, bookmark] = await Promise.all([
+          this.prisma.like.findFirst({
+            where: { postId, userId: req.userId },
+          }),
+          this.prisma.bookmark.findFirst({
+            where: { postId, userId: req.userId },
+          }),
+        ]);
+        isLiked = !!like;
+        isBookmarked = !!bookmark;
+      }
+
+      HttpSuccess.ok(
+        res,
+        { ...post, isLiked, isBookmarked },
+        'Post retrieved successfully'
+      );
+    } catch (err) {
+      HttpErrors.serverError(res, err, 'Get post');
+    }
+  };
+
+  /**
+   * Delete post by ID
+   * DELETE /posts/:id
+   */
+  public deletePostById = async (
+    req: AuthRequest,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const userId = req.userId;
+      const postId = req.params.id;
+
+      if (!userId) {
+        HttpErrors.unauthorized(res);
+        return;
+      }
+
+      if (!postId) {
+        HttpErrors.badRequest(res, 'Post ID is required');
+        return;
+      }
+
+      const post = await this.prisma.post.findUnique({
+        where: { id: postId },
+      });
+
+      if (!post) {
+        HttpErrors.notFound(res, 'Post');
+        return;
+      }
+
+      // Check ownership
+      if (post.userId !== userId) {
+        HttpErrors.unauthorized(res, 'You can only delete your own posts');
+        return;
+      }
+
+      // Delete from database
+      await this.prisma.post.delete({
+        where: { id: postId },
+      });
+
+      // Delete image from Cloudinary
+      if (post.mediaUrl) {
+        await deleteFromCloudinary(post.mediaUrl);
+      }
+
+      HttpSuccess.ok(
+        res,
+        { success: true, id: postId },
+        'Post deleted successfully'
+      );
+    } catch (err) {
+      HttpErrors.serverError(res, err, 'Delete post');
+    }
+  };
+
+  /**
+   * Like a post
+   * POST /posts/:id/like
+   */
+  public likePost = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.userId;
+      const postId = req.params.id;
+
+      if (!userId) {
+        HttpErrors.unauthorized(res);
+        return;
+      }
+
+      if (!postId) {
+        HttpErrors.badRequest(res, 'Post ID is required');
+        return;
+      }
+
+      // Check if post exists
+      const post = await this.prisma.post.findUnique({
+        where: { id: postId },
+      });
+
+      if (!post) {
+        HttpErrors.notFound(res, 'Post');
+        return;
+      }
+
+      // Check if already liked
+      const existingLike = await this.prisma.like.findFirst({
+        where: { postId, userId },
+      });
+
+      if (existingLike) {
+        HttpErrors.conflict(res, 'You have already liked this post');
+        return;
+      }
+
+      // Create like
+      await this.prisma.like.create({
+        data: { postId, userId },
+      });
+
+      // Get updated count
+      const likeCount = await this.prisma.like.count({
+        where: { postId },
+      });
+
+      HttpSuccess.created(
+        res,
+        { liked: true, postId, likeCount },
+        'Post liked successfully'
+      );
+    } catch (err) {
+      HttpErrors.serverError(res, err, 'Like post');
+    }
+  };
+
+  /**
+   * Unlike a post
+   * DELETE /posts/:id/like
+   */
+  public unlikePost = async (
+    req: AuthRequest,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const userId = req.userId;
+      const postId = req.params.id;
+
+      if (!userId) {
+        HttpErrors.unauthorized(res);
+        return;
+      }
+
+      if (!postId) {
+        HttpErrors.badRequest(res, 'Post ID is required');
+        return;
+      }
+
+      // Check if post exists
+      const post = await this.prisma.post.findUnique({
+        where: { id: postId },
+      });
+
+      if (!post) {
+        HttpErrors.notFound(res, 'Post');
+        return;
+      }
+
+      // Check if liked
+      const existingLike = await this.prisma.like.findFirst({
+        where: { postId, userId },
+      });
+
+      if (!existingLike) {
+        HttpErrors.notFound(res, 'Like');
+        return;
+      }
+
+      // Delete like
+      await this.prisma.like.delete({
+        where: { id: existingLike.id },
+      });
+
+      // Get updated count
+      const likeCount = await this.prisma.like.count({
+        where: { postId },
+      });
+
+      HttpSuccess.ok(
+        res,
+        { liked: false, postId, likeCount },
+        'Post unliked successfully'
+      );
+    } catch (err) {
+      HttpErrors.serverError(res, err, 'Unlike post');
+    }
+  };
+
+  /**
+   * Bookmark a post
+   * POST /posts/:id/bookmark
+   */
+  public bookmarkPost = async (
+    req: AuthRequest,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const userId = req.userId;
+      const postId = req.params.id;
+
+      if (!userId) {
+        HttpErrors.unauthorized(res);
+        return;
+      }
+
+      if (!postId) {
+        HttpErrors.badRequest(res, 'Post ID is required');
+        return;
+      }
+
+      // Check if post exists
+      const post = await this.prisma.post.findUnique({
+        where: { id: postId },
+      });
+
+      if (!post) {
+        HttpErrors.notFound(res, 'Post');
+        return;
+      }
+
+      // Check if already bookmarked
+      const existingBookmark = await this.prisma.bookmark.findFirst({
+        where: { postId, userId },
+      });
+
+      if (existingBookmark) {
+        HttpErrors.conflict(res, 'You have already bookmarked this post');
+        return;
+      }
+
+      // Create bookmark
+      const bookmark = await this.prisma.bookmark.create({
+        data: { postId, userId },
+        select: {
+          id: true,
+          postId: true,
+          userId: true,
+          createdAt: true,
+        },
+      });
+
+      HttpSuccess.created(
+        res,
+        { bookmarked: true, bookmark },
+        'Post bookmarked successfully'
+      );
+    } catch (err) {
+      HttpErrors.serverError(res, err, 'Bookmark post');
+    }
+  };
+
+  /**
+   * Remove bookmark from a post
+   * DELETE /posts/:id/bookmark
+   */
+  public unbookmarkPost = async (
+    req: AuthRequest,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const userId = req.userId;
+      const postId = req.params.id;
+
+      if (!userId) {
+        HttpErrors.unauthorized(res);
+        return;
+      }
+
+      if (!postId) {
+        HttpErrors.badRequest(res, 'Post ID is required');
+        return;
+      }
+
+      // Check if post exists
+      const post = await this.prisma.post.findUnique({
+        where: { id: postId },
+      });
+
+      if (!post) {
+        HttpErrors.notFound(res, 'Post');
+        return;
+      }
+
+      // Check if bookmarked
+      const existingBookmark = await this.prisma.bookmark.findFirst({
+        where: { postId, userId },
+      });
+
+      if (!existingBookmark) {
+        HttpErrors.notFound(res, 'Bookmark');
+        return;
+      }
+
+      // Delete bookmark
+      await this.prisma.bookmark.delete({
+        where: { id: existingBookmark.id },
+      });
+
+      HttpSuccess.ok(
+        res,
+        { bookmarked: false, postId },
+        'Bookmark removed successfully'
+      );
+    } catch (err) {
+      HttpErrors.serverError(res, err, 'Remove bookmark');
+    }
+  };
+
+  /**
+   * Get posts feed with cursor pagination
+   * GET /posts/feed?limit=10&cursor=postId
+   */
+  public getFeed = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.userId;
+      const { limit, cursor } = parsePaginationParams(req.query as any);
+      const cursorQuery = buildCursorQuery({ limit, cursor });
+
+      const posts = await this.prisma.post.findMany({
+        ...cursorQuery,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              avatar: true,
+            },
+          },
+          location: {
+            select: {
+              id: true,
+              name: true,
+              category: true,
+            },
+          },
+          _count: {
+            select: {
+              likes: true,
+              comments: true,
+              bookmarks: true,
+            },
+          },
+        },
+      });
+
+      // Add user interaction flags if authenticated
+      let postsWithInteraction = posts.map((post) => ({
+        ...post,
+        isLiked: false,
+        isBookmarked: false,
+      }));
+
+      if (userId && posts.length > 0) {
         const postIds = posts.map((post) => post.id);
 
-        // Get user's likes and bookmarks for these posts
         const [userLikes, userBookmarks] = await Promise.all([
           this.prisma.like.findMany({
-            where: {
-              userId: userId,
-              postId: { in: postIds },
-            },
+            where: { userId, postId: { in: postIds } },
             select: { postId: true },
           }),
           this.prisma.bookmark.findMany({
-            where: {
-              userId: userId,
-              postId: { in: postIds },
-            },
+            where: { userId, postId: { in: postIds } },
             select: { postId: true },
           }),
         ]);
@@ -776,43 +546,23 @@ class PostController {
         const likedPostIds = new Set(userLikes.map((l) => l.postId));
         const bookmarkedPostIds = new Set(userBookmarks.map((b) => b.postId));
 
-        postsWithUserInteraction = posts.map((post) => ({
+        postsWithInteraction = posts.map((post) => ({
           ...post,
           isLiked: likedPostIds.has(post.id),
           isBookmarked: bookmarkedPostIds.has(post.id),
         }));
       }
 
-      // Calculate next cursor
-      const nextCursor =
-        posts.length === limit ? posts[posts.length - 1]?.id : null;
-      const hasMore = posts.length === limit;
-
-      res.status(200).json(
-        makeSuccessResponse(
-          {
-            posts: postsWithUserInteraction,
-            pagination: {
-              nextCursor,
-              hasMore,
-              count: posts.length,
-            },
-          },
-          'Feed retrieved successfully',
-          200
-        )
+      HttpSuccess.ok(
+        res,
+        {
+          posts: postsWithInteraction,
+          pagination: buildPaginationResponse(posts, limit),
+        },
+        'Feed retrieved successfully'
       );
     } catch (err) {
-      console.error('Get feed error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Feed failed'),
-            'Failed to retrieve feed',
-            500
-          )
-        );
+      HttpErrors.serverError(res, err, 'Get feed');
     }
   };
 
@@ -826,27 +576,17 @@ class PostController {
   ): Promise<void> => {
     try {
       const userId = req.userId;
-      const limit = Math.min(Number(req.query.limit) || 10, 50);
-      const cursor = req.query.cursor as string | undefined;
 
       if (!userId) {
-        res
-          .status(401)
-          .json(
-            makeErrorResponse(
-              new Error('Unauthorized'),
-              'Authentication required',
-              401
-            )
-          );
+        HttpErrors.unauthorized(res);
         return;
       }
 
+      const { limit, cursor } = parsePaginationParams(req.query as any);
+
       const bookmarks = await this.prisma.bookmark.findMany({
-        where: { userId: userId },
-        take: limit,
-        skip: cursor ? 1 : 0,
-        cursor: cursor ? { id: cursor } : undefined,
+        where: { userId },
+        ...buildCursorQuery({ limit, cursor }),
         orderBy: { createdAt: 'desc' },
         include: {
           post: {
@@ -877,35 +617,16 @@ class PostController {
           bookmarkedAt: b.createdAt,
         }));
 
-      const nextCursor =
-        bookmarks.length === limit ? bookmarks[bookmarks.length - 1]?.id : null;
-      const hasMore = bookmarks.length === limit;
-
-      res.status(200).json(
-        makeSuccessResponse(
-          {
-            posts,
-            pagination: {
-              nextCursor,
-              hasMore,
-              count: posts.length,
-            },
-          },
-          'Bookmarked posts retrieved successfully',
-          200
-        )
+      HttpSuccess.ok(
+        res,
+        {
+          posts,
+          pagination: buildPaginationResponse(bookmarks, limit),
+        },
+        'Bookmarked posts retrieved successfully'
       );
     } catch (err) {
-      console.error('Get bookmarks error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Bookmarks failed'),
-            'Failed to retrieve bookmarked posts',
-            500
-          )
-        );
+      HttpErrors.serverError(res, err, 'Get bookmarks');
     }
   };
 }

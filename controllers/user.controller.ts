@@ -1,20 +1,21 @@
 import { prisma } from '../config/db';
 import type { Response } from 'express';
 import {
-  makeErrorResponse,
   makeSuccessResponse,
+  HttpErrors,
+  HttpSuccess,
 } from '../helpers/standardResponse';
 import type { AuthRequest } from '../middlewares/auth.middleware';
 import type { PrismaClient } from '../generated/prisma/client';
 import type { UploadedFile } from 'express-fileupload';
+import { FILE_CONSTRAINTS, validateFile } from '../helpers/fileValidator';
 import {
-  FILE_CONSTRAINTS,
-  fileToDataUri,
-  validateFile,
-} from '../helpers/fileValidator';
-import cloudinary from '../config/cloudnary';
-import postController from './post.controller';
-class userController {
+  uploadToCloudinary,
+  deleteFromCloudinary,
+  CLOUDINARY_PRESETS,
+} from '../helpers/cloudinary';
+
+class UserController {
   constructor(private prisma: PrismaClient) {}
 
   public getUserById = async (
@@ -23,69 +24,41 @@ class userController {
   ): Promise<void> => {
     try {
       const userId = req.params.id;
+
       if (!userId) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('UserId requried'),
-              'UserId required!',
-              404
-            )
-          );
+        HttpErrors.badRequest(res, 'User ID is required');
         return;
       }
-      const existingUser = await this.prisma.user.findUnique({
-        where: {
-          id: userId,
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          avatar: true,
+          createdAt: true,
+          updatedAt: true,
         },
       });
-      if (!existingUser) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('User not found'),
-              'User not found',
-              400
-            )
-          );
+
+      if (!user) {
+        HttpErrors.notFound(res, 'User');
         return;
       }
-      res
-        .status(200)
-        .json(
-          makeSuccessResponse(existingUser, 'User retrieved successfully ', 200)
-        );
-      return;
+
+      HttpSuccess.ok(res, user, 'User retrieved successfully');
     } catch (err) {
-      console.error('Registration error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Registration failed'),
-            'Registration failed',
-            500
-          )
-        );
+      HttpErrors.serverError(res, err, 'Get user');
     }
   };
 
   public editUser = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const userId = req?.userId;
-      console.log('request:', req.body);
+
       if (!userId) {
-        res
-          .status(401)
-          .json(
-            makeErrorResponse(
-              new Error('Unauthorized'),
-              'Authentication required',
-              401
-            )
-          );
+        HttpErrors.unauthorized(res);
         return;
       }
 
@@ -94,15 +67,7 @@ class userController {
       });
 
       if (!existingUser) {
-        res
-          .status(404)
-          .json(
-            makeErrorResponse(
-              new Error('User not found'),
-              'User not found',
-              404
-            )
-          );
+        HttpErrors.notFound(res, 'User');
         return;
       }
 
@@ -125,66 +90,27 @@ class userController {
         });
 
         if (!validation.isValid) {
-          res
-            .status(400)
-            .json(
-              makeErrorResponse(
-                new Error(validation.error),
-                validation.error || 'Invalid file',
-                400
-              )
-            );
+          HttpErrors.badRequest(res, validation.error || 'Invalid file');
           return;
         }
 
-        const dataUri = fileToDataUri(file);
-        const cloudResult = await cloudinary.uploader.upload(dataUri, {
-          folder: 'roamly/profiles',
-          transformation: [
-            {
-              width: 500,
-              height: 500,
-              crop: 'limit',
-              quality: 'auto:good',
-              fetch_format: 'auto',
-            },
-          ],
-          public_id: `profile_${userId}`,
+        const uploadResult = await uploadToCloudinary(file, {
+          ...CLOUDINARY_PRESETS.PROFILE,
+          publicId: `profile_${userId}`,
           overwrite: true,
-          invalidate: true,
         });
 
-        updateData.avatar = cloudResult.secure_url;
+        updateData.avatar = uploadResult.url;
 
         // Delete old avatar from Cloudinary
-        if (
-          existingUser.avatar &&
-          existingUser.avatar !== cloudResult.secure_url
-        ) {
-          try {
-            const publicId = postController.extractPublicId(
-              existingUser.avatar
-            );
-            if (publicId) {
-              await cloudinary.uploader.destroy(publicId);
-            }
-          } catch (deleteError) {
-            console.warn('Failed to delete old avatar:', deleteError);
-          }
+        if (existingUser.avatar && existingUser.avatar !== uploadResult.url) {
+          await deleteFromCloudinary(existingUser.avatar);
         }
       }
 
       // Check if there's anything to update
       if (Object.keys(updateData).length === 0) {
-        res
-          .status(400)
-          .json(
-            makeErrorResponse(
-              new Error('No data provided'),
-              'At least name or avatar must be provided',
-              400
-            )
-          );
+        HttpErrors.badRequest(res, 'At least name or avatar must be provided');
         return;
       }
 
@@ -202,24 +128,11 @@ class userController {
         },
       });
 
-      res
-        .status(200)
-        .json(
-          makeSuccessResponse(updatedUser, 'User updated successfully', 200)
-        );
+      HttpSuccess.ok(res, updatedUser, 'User updated successfully');
     } catch (err) {
-      console.error('Edit user error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Update failed'),
-            'Failed to update user',
-            500
-          )
-        );
+      HttpErrors.serverError(res, err, 'Edit user');
     }
   };
 }
 
-export default new userController(prisma);
+export default new UserController(prisma);
