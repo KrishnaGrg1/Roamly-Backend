@@ -28,15 +28,29 @@ class ValidationMiddleware {
         }
         if (params) {
           const validateResult = await params.parseAsync(req.params);
-          req.params = validateResult as any;
+          // Assign each property individually to avoid readonly issues
+          Object.keys(validateResult as object).forEach((key) => {
+            (req.params as Record<string, any>)[key] = (
+              validateResult as Record<string, any>
+            )[key];
+          });
         }
         if (query) {
           const validateResult = await query.parseAsync(req.query);
-          req.query = validateResult as any;
+          // Assign each property individually to avoid readonly issues
+          Object.keys(validateResult as object).forEach((key) => {
+            (req.query as Record<string, any>)[key] = (
+              validateResult as Record<string, any>
+            )[key];
+          });
         }
         if (headers) {
           const validateResult = await headers.parseAsync(req.headers);
-          req.headers = validateResult as any;
+          Object.keys(validateResult as object).forEach((key) => {
+            (req.headers as Record<string, any>)[key] = (
+              validateResult as Record<string, any>
+            )[key];
+          });
         }
         next();
       } catch (e: any) {

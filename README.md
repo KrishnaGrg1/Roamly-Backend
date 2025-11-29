@@ -23,32 +23,103 @@ To run:
 bun dev
 ```
 
-## Need to do
+## API Routes
 
-1. **Location Routes:**
+Base URL: `/api/v1`
 
-| Method | Routes                               |
-| ------ | ------------------------------------ |
-| POST   | /locations // add location(admin)    |
-| GET    | /locations // list all the locations |
-| GET    | /locations/:id //location details    |
-| GET    | /locations/nearby //places nearby    |
+---
 
-Params for /nearby:
+### 1. **Auth Routes** (`/auth`)
 
-```bash
-?lat=...
-&lng=...
-&radius=5000 (meters)
+| Method | Endpoint    | Description              | Auth Required |
+| ------ | ----------- | ------------------------ | ------------- |
+| POST   | `/register` | Register a new user      | ❌            |
+| POST   | `/login`    | Login and get JWT token  | ❌            |
+| GET    | `/me`       | Get current user profile | ✅            |
+
+---
+
+### 2. **User Routes** (`/user`) 🔒
+
+> All routes require authentication
+
+| Method | Endpoint  | Description                                  |
+| ------ | --------- | -------------------------------------------- |
+| GET    | `/:id`    | Get user by ID                               |
+| PUT    | `/update` | Update user profile (supports avatar upload) |
+
+---
+
+### 3. **Post Routes** (`/post`) 🔒
+
+> All routes require authentication
+
+| Method | Endpoint        | Description                    |
+| ------ | --------------- | ------------------------------ |
+| POST   | `/`             | Create a new post (with media) |
+| GET    | `/feed`         | Get paginated feed             |
+| GET    | `/bookmarks`    | Get bookmarked posts           |
+| GET    | `/:id`          | Get post by ID                 |
+| DELETE | `/:id`          | Delete post by ID              |
+| POST   | `/:id/like`     | Like a post                    |
+| DELETE | `/:id/like`     | Unlike a post                  |
+| POST   | `/:id/bookmark` | Bookmark a post                |
+| DELETE | `/:id/bookmark` | Remove bookmark from a post    |
+
+**Feed Query Params:**
+
+```
+?cursor=<post_id>&limit=10
 ```
 
-2. **AI Routes:**
+**Bookmarks Query Params:**
 
-| Method | Routes                                                            |
-| ------ | ----------------------------------------------------------------- |
-| POST   | /ai/suggest //suggest places based on user's location + interests |
-| POST   | //ai/generate-embedding // generate vector for a location         |
-| GET    | /ai/recommend-locations // personalized recommended places        |
+```
+?cursor=<bookmark_id>&limit=10
+```
+
+---
+
+### 4. **Location Routes** (`/location`) 🔒
+
+> All routes require authentication
+
+| Method | Endpoint  | Description                |
+| ------ | --------- | -------------------------- |
+| POST   | `/`       | Add a new location (admin) |
+| GET    | `/`       | List all locations         |
+| GET    | `/nearby` | Get nearby locations       |
+| GET    | `/search` | Search locations           |
+| GET    | `/:id`    | Get location details by ID |
+
+**Nearby Query Params:**
+
+```
+?lat=27.7172&lng=85.3240&radius=5
+```
+
+> `radius` is in kilometers (default: 5km, max: 100km)
+
+**Search Query Params:**
+
+```
+?q=hotel&category=HOTEL
+```
+
+**Location Categories:**
+`HOTEL`, `RESTAURANT`, `ATTRACTION`, `TREKKING`, `VIEWPOINT`, `SHOPPING`, `OTHER`
+
+---
+
+## Need to do
+
+1. **AI Routes:**
+
+| Method | Routes                    | Description                                       |
+| ------ | ------------------------- | ------------------------------------------------- |
+| POST   | `/ai/suggest`             | Suggest places based on user location + interests |
+| POST   | `/ai/generate-embedding`  | Generate vector for a location                    |
+| GET    | `/ai/recommend-locations` | Personalized recommended places                   |
 
 ---
 

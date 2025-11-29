@@ -4,6 +4,8 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../config/db';
 import env from '../config/env';
 import {
+  HttpErrors,
+  HttpSuccess,
   makeErrorResponse,
   makeSuccessResponse,
 } from '../helpers/standardResponse';
@@ -25,15 +27,7 @@ class AuthController {
       });
 
       if (existingUser) {
-        res
-          .status(409)
-          .json(
-            makeErrorResponse(
-              new Error('User already exists'),
-              'A user with this email already exists',
-              409
-            )
-          );
+        HttpErrors.notFound(res, 'User');
         return;
       }
 
@@ -53,22 +47,10 @@ class AuthController {
         },
       });
 
-      res
-        .status(201)
-        .json(
-          makeSuccessResponse(newUser, 'User registered successfully', 201)
-        );
+      HttpSuccess.created(res, newUser, 'User registered successfully');
+      return;
     } catch (err) {
-      console.error('Registration error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Registration failed'),
-            'Registration failed',
-            500
-          )
-        );
+      HttpErrors.serverError(res, err, 'Registered failed');
     }
   };
 
@@ -125,16 +107,7 @@ class AuthController {
 
       res.status(200).json(makeSuccessResponse(token, 'Login successful', 200));
     } catch (err) {
-      console.error('Login error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Login failed'),
-            'Login failed',
-            500
-          )
-        );
+      HttpErrors.serverError(res, err, 'Login error');
     }
   };
 
@@ -167,16 +140,7 @@ class AuthController {
           )
         );
     } catch (err) {
-      console.error('Registration error:', err);
-      res
-        .status(500)
-        .json(
-          makeErrorResponse(
-            err instanceof Error ? err : new Error('Registration failed'),
-            'Registration failed',
-            500
-          )
-        );
+      HttpErrors.serverError(res, err, 'Get me failed');
     }
   };
 }
