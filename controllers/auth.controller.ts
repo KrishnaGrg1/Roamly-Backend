@@ -104,7 +104,7 @@ class AuthController {
       const token = jwt.sign({ id: user.id }, secret, {
         expiresIn: this.TOKEN_EXPIRY,
       });
-
+      // res.cookie('cookie', token);
       res.status(200).json(makeSuccessResponse(token, 'Login successful', 200));
     } catch (err) {
       HttpErrors.serverError(res, err, 'Login error');
