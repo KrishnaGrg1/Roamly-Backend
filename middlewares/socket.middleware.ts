@@ -11,7 +11,6 @@ export const socketAuthMiddleware = async (
   next: (err?: Error) => void
 ): Promise<void> => {
   try {
-    console.log('hello ther socket middleware');
     const token =
       socket.handshake.auth?.token ||
       socket.handshake.headers?.authorization ||
@@ -28,11 +27,12 @@ export const socketAuthMiddleware = async (
 
     const decoded = jwt.verify(token, secret) as JwtPayload;
 
-    if (typeof decoded === 'string' || !decoded.userId) {
+    if (typeof decoded === 'string') {
       return next(new Error('Invalid token payload'));
     }
-    console.log('socket middleware ');
-    socket.userId = decoded.userId;
+    console.log('userid', decoded.id);
+    socket.userId = decoded.id;
+    console.log('user id', socket.userId);
     next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
