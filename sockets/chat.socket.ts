@@ -65,6 +65,13 @@ const handleSendMessage = (
     return;
   }
 
+  if (!isAuthenticated(socket)) {
+    socket.emit(
+      SOCKET_EVENTS.ERROR,
+      createErrorResponse(ERROR_MESSAGES.NOT_AUTHENTICATED)
+    );
+    return;
+  }
   const { receiverId, message } = parsedPayload;
 
   if (!receiverId?.trim()) {
@@ -79,14 +86,6 @@ const handleSendMessage = (
     socket.emit(
       SOCKET_EVENTS.ERROR,
       createErrorResponse(ERROR_MESSAGES.MISSING_MESSAGE)
-    );
-    return;
-  }
-
-  if (!isAuthenticated(socket)) {
-    socket.emit(
-      SOCKET_EVENTS.ERROR,
-      createErrorResponse(ERROR_MESSAGES.NOT_AUTHENTICATED)
     );
     return;
   }
@@ -111,19 +110,16 @@ const handleSendMessage = (
   // 4. Send to specific user (private message)
   // io.to(`user:${receiverId}`).emit('newMessage', message);
 
-  logSocketEvent(SOCKET_EVENTS.SEND_MESSAGE, socket.userId, chatMessage);
-
-  io.to(`user:${receiverId}`).emit(
+  io.to(`user:${chatMessage.receiverId}`).emit(
     SOCKET_EVENTS.MESSAGE,
     createSuccessResponse(chatMessage)
   );
 
   socket.emit(SOCKET_EVENTS.MESSAGE_SENT, createSuccessResponse(chatMessage));
+  logSocketEvent(SOCKET_EVENTS.SEND_MESSAGE, socket.userId, chatMessage);
 };
 
-const handleDisconnect = (io: Server, socket: AuthenticatedSocket): void => {
-  const timestamp = new Date().toISOString();
-  io.emit('DisconnectMessage', `UserId:${socket.userId} at ${timestamp} `);
+const handleDisconnect = (socket: AuthenticatedSocket): void => {
   logSocketEvent('DISCONNECT', socket.userId, { socketId: socket.id });
 };
 
@@ -133,17 +129,19 @@ export const registerChatHandlers = (
 ): void => {
   logSocketEvent('CONNECT', socket.userId, { socketId: socket.id });
 
-  if (isAuthenticated(socket)) {
-    const personalRoom = `user:${socket.userId}`;
-    socket.join(personalRoom);
-    logSocketEvent('JOIN_PERSONAL_ROOM', socket.userId, { room: personalRoom });
+  if (!isAuthenticated(socket)) {
+    console.log('Unauthorized user');
+    return;
   }
+  const personalRoom = `user:${socket.userId}`;
+  socket.join(personalRoom);
+  logSocketEvent('JOIN_PERSONAL_ROOM', socket.userId, { room: personalRoom });
 
   socket.on(SOCKET_EVENTS.SEND_MESSAGE, (payload: SendMessagePayload) => {
     handleSendMessage(io, socket, payload);
   });
 
   socket.on('disconnect', () => {
-    handleDisconnect(io, socket);
+    handleDisconnect(socket);
   });
 };

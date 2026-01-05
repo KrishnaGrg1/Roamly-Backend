@@ -17,6 +17,7 @@ class AuthValidation {
         .string({ message: 'Password is required' })
         .min(8, { message: 'Password must be at least 8 characters' })
         .max(50, { message: 'Password must not exceed 50 characters' }),
+      role: z.enum(['USER', 'BUSINESS', 'ADMIN']).optional(),
     }),
   };
 
@@ -31,6 +32,22 @@ class AuthValidation {
         .string({ message: 'Password is required' })
         .min(8, { message: 'Password must be at least 8 characters' })
         .max(50, { message: 'Password must not exceed 50 characters' }),
+    }),
+  };
+
+  refresh = {
+    body: z.object({
+      refreshToken: z
+        .string({ message: 'Refresh token is required' })
+        .min(1, { message: 'Refresh token cannot be empty' }),
+    }),
+  };
+
+  logout = {
+    body: z.object({
+      refreshToken: z
+        .string({ message: 'Refresh token is required' })
+        .min(1, { message: 'Refresh token cannot be empty' }),
     }),
   };
 }

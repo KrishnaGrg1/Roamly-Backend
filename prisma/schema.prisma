@@ -1,8 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// ===================================
+// Prisma Generator & Datasource
+// ===================================
 
 generator client {
   provider = "prisma-client"
@@ -12,6 +10,10 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// ===================================
+// ENUMS
+// ===================================
 
 enum LocationCategory {
   HOTEL
@@ -23,12 +25,74 @@ enum LocationCategory {
   OTHER
 }
 
+enum UserRole {
+  USER
+  BUSINESS
+  ADMIN
+}
+
+enum SubscriptionTier {
+  FREE
+  PREMIUM
+}
+
+enum MediaType {
+  PHOTO
+  VIDEO
+}
+
+enum BusinessType {
+  HOTEL
+  RESTAURANT
+  GUIDE
+  EXPERIENCE
+  SHOP
+}
+
+enum BusinessTier {
+  FREE
+  BOOSTED
+  PREMIUM
+}
+
+enum TripStatus {
+  GENERATED
+  SAVED
+  COMPLETED
+  CANCELLED
+}
+
+enum TravelStyle {
+  ADVENTURE
+  RELAXED
+  CULTURAL
+  LUXURY
+  BACKPACKING
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+// ===================================
+// USER
+// ===================================
+
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  avatar    String?
+  id       String   @id @default(uuid())
+  name     String
+  email    String   @unique
+  password String
+  avatar   String?
+  role     UserRole @default(USER)
+
+  subscriptionTier SubscriptionTier @default(FREE)
+  subscriptionEnds DateTime?
+
+  preferences Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -39,20 +103,42 @@ model User {
   comments      Comment[]
   likes         Like[]
   routes        Route[]
+  trips         Trip[]
+  businesses    Business[]
+  bookings      Booking[]
+  aiLogs        AiInteraction[]
+  refreshTokens RefreshToken[]
 }
 
-enum MediaType {
-  PHOTO
-  VIDEO
+// ===================================
+// REFRESH TOKENS
+// ===================================
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
+
+
+// ===================================
+// POSTS & SOCIAL
+// ===================================
 
 model Post {
   id         String    @id @default(uuid())
   userId     String
   caption    String?
-  mediaUrl   String // Cloudinary URL
+  mediaUrl   String
   mediaType  MediaType
-  locationId String? // link to place/hotel/restaurant
+  locationId String?
   createdAt  DateTime  @default(now())
 
   user      User       @relation(fields: [userId], references: [id])
@@ -60,71 +146,9 @@ model Post {
   comments  Comment[]
   likes     Like[]
   bookmarks Bookmark[]
-}
 
-model Bookmark {
-  id         String   @id @default(uuid())
-  userId     String
-  postId     String?
-  locationId String?
-  createdAt  DateTime @default(now())
-
-  user     User      @relation(fields: [userId], references: [id])
-  post     Post?     @relation(fields: [postId], references: [id])
-  location Location? @relation(fields: [locationId], references: [id])
-}
-
-model Location {
-  id          String           @id @default(uuid())
-  name        String
-  category    LocationCategory // hotel, restaurant, attraction, etc.
-  description String?
-  latitude    Float
-  longitude   Float
-  address     String?
-  priceRange  String? // optional
-  rating      Float? // avg rating
-  createdAt   DateTime         @default(now())
-
-  posts        Post[]
-  businessInfo BusinessInfo?
-  reviews      Review[]
-  embeddings   LocationEmbedding?
-  bookmarks    Bookmark[]
-  promotions   Promotion[]
-}
-
-model BusinessInfo {
-  id            String   @id @default(uuid())
-  locationId    String   @unique
-  phone         String?
-  website       String?
-  checkIn       String?
-  checkOut      String?
-  pricePerNight Float?
-  menuUrl       String?
-  images        String[] // Cloudinary list
-
-  location Location @relation(fields: [locationId], references: [id])
-}
-
-model LocationEmbedding {
-  id         String  @id @default(uuid())
-  locationId String  @unique
-  embedding  Float[] // vector
-  metadata   Json?
-
-  location Location @relation(fields: [locationId], references: [id])
-}
-
-model TravelHistory {
-  id          String   @id @default(uuid())
-  userId      String
-  source      String
-  destination String
-  date        DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
+  @@index([createdAt])
+  @@index([locationId])
 }
 
 model Comment {
@@ -146,18 +170,85 @@ model Like {
 
   post Post @relation(fields: [postId], references: [id])
   user User @relation(fields: [userId], references: [id])
+
+  @@unique([postId, userId])
 }
+
+model Bookmark {
+  id         String   @id @default(uuid())
+  userId     String
+  postId     String?
+  locationId String?
+  createdAt  DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id])
+  post     Post?     @relation(fields: [postId], references: [id])
+  location Location? @relation(fields: [locationId], references: [id])
+}
+
+// ===================================
+// LOCATION & BUSINESS
+// ===================================
+
+model Location {
+  id          String           @id @default(uuid())
+  name        String
+  category    LocationCategory
+  description String?
+  latitude    Float
+  longitude   Float
+  address     String?
+
+  priceRange String?
+  avgRating  Float?
+  verified   Boolean @default(false)
+
+  ownerBusinessId String?
+  ownerBusiness   Business? @relation(fields: [ownerBusinessId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  posts      Post[]
+  reviews    Review[]
+  embeddings LocationEmbedding?
+  bookmarks  Bookmark[]
+  promotions Promotion[]
+  bookings   Booking[]
+
+  @@index([latitude, longitude])
+  @@index([category])
+}
+
+model Business {
+  id       String       @id @default(uuid())
+  ownerId  String
+  type     BusinessType
+  tier     BusinessTier @default(FREE)
+  verified Boolean      @default(false)
+
+  createdAt DateTime @default(now())
+
+  owner     User       @relation(fields: [ownerId], references: [id])
+  locations Location[]
+  bookings  Booking[]
+}
+
+// ===================================
+// REVIEWS & PROMOTION
+// ===================================
 
 model Review {
   id         String   @id @default(uuid())
   userId     String
   locationId String
-  rating     Int // 1–5
+  rating     Int
   comment    String?
   createdAt  DateTime @default(now())
 
   user     User     @relation(fields: [userId], references: [id])
   location Location @relation(fields: [locationId], references: [id])
+
+  @@unique([userId, locationId])
 }
 
 model Promotion {
@@ -170,6 +261,55 @@ model Promotion {
   createdAt   DateTime @default(now())
 
   location Location @relation(fields: [locationId], references: [id])
+}
+
+// ===================================
+// AI & EMBEDDINGS
+// ===================================
+
+model LocationEmbedding {
+  id         String  @id @default(uuid())
+  locationId String  @unique
+  embedding  Float[]
+  metadata   Json?
+
+  location Location @relation(fields: [locationId], references: [id])
+}
+
+model AiInteraction {
+  id       String @id @default(uuid())
+  userId   String
+  prompt   String
+  response Json
+  model    String
+  tokens   Int?
+  feedback Int?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ===================================
+// TRIPS & ROUTES
+// ===================================
+
+model Trip {
+  id     String     @id @default(uuid())
+  userId String
+  status TripStatus @default(GENERATED)
+
+  startLocation String
+  days          Int
+  budget        String
+  travelStyle   TravelStyle[]
+
+  itinerary     Json
+  costBreakdown Json?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Route {
@@ -186,4 +326,36 @@ model Route {
   user User @relation(fields: [userId], references: [id])
 }
 
+model TravelHistory {
+  id          String   @id @default(uuid())
+  userId      String
+  source      String
+  destination String
+  date        DateTime @default(now())
 
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ===================================
+// BOOKINGS & PAYMENTS
+// ===================================
+
+model Booking {
+  id         String @id @default(uuid())
+  userId     String
+  businessId String
+  locationId String
+
+  amount     Float
+  commission Float
+  status     BookingStatus
+
+  createdAt DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  business Business @relation(fields: [businessId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@index([userId])
+  @@index([businessId])
+}

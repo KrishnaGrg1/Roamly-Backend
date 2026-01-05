@@ -18,6 +18,18 @@ AuthRoutes.post(
   authController.loginUser
 );
 
+AuthRoutes.post(
+  '/refresh',
+  validate(authValidation.refresh),
+  authController.refreshToken
+);
+
 AuthRoutes.get('/me', authMiddleware.verifyToken, authController.getMe);
+
+AuthRoutes.post(
+  '/logout',
+  validate(authValidation.logout),
+  authController.logout
+);
 
 export default AuthRoutes;

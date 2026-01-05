@@ -4,6 +4,7 @@ import env from '../config/env';
 
 export interface AuthenticatedSocket extends Socket {
   userId?: string;
+  role?: string;
 }
 
 export const socketAuthMiddleware = async (
@@ -32,6 +33,7 @@ export const socketAuthMiddleware = async (
     }
     console.log('userid', decoded.id);
     socket.userId = decoded.id;
+    socket.role = decoded.role;
     console.log('user id', socket.userId);
     next();
   } catch (error) {

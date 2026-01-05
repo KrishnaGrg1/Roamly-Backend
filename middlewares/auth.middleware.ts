@@ -5,10 +5,12 @@ import { makeErrorResponse } from '../helpers/standardResponse';
 
 export interface AuthRequest extends Request {
   userId?: string;
+  role?: string;
 }
 
 interface JWTPayload {
   id: string;
+  role: string;
 }
 
 class AuthMiddleware {
@@ -36,6 +38,7 @@ class AuthMiddleware {
               401
             )
           );
+        return;
       }
       const secret = env.JWT_SECRET as string;
       if (!secret) {
@@ -52,8 +55,10 @@ class AuthMiddleware {
               403
             )
           );
+        return;
       }
       req.userId = decode.id;
+      req.role = decode.role;
       next();
     } catch (err) {
       if (err instanceof jwt.TokenExpiredError) {
