@@ -39,6 +39,12 @@ export const CLOUDINARY_PRESETS = {
     height: 1200,
     crop: 'limit',
   },
+  BUSINESS: {
+    folder: 'roamly/business',
+    width: 500,
+    height: 500,
+    crop: 'limit',
+  },
 } as const;
 
 /**

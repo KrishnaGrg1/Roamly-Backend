@@ -75,6 +75,12 @@ enum BookingStatus {
   CANCELLED
   COMPLETED
 }
+enum BusinessStatus {
+  DRAFT
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
 
 // ===================================
 // USER
@@ -220,17 +226,33 @@ model Location {
 }
 
 model Business {
-  id       String       @id @default(uuid())
-  ownerId  String
-  type     BusinessType
-  tier     BusinessTier @default(FREE)
-  verified Boolean      @default(false)
-
-  createdAt DateTime @default(now())
+  id        String       @id @default(uuid())
+  ownerId   String
+  type      BusinessType
+  tier      BusinessTier @default(FREE)
+  verified  Boolean      @default(false)
+  status    BusinessStatus @default(DRAFT)
 
   owner     User       @relation(fields: [ownerId], references: [id])
+  profile   BusinessProfile?
   locations Location[]
   bookings  Booking[]
+
+  createdAt DateTime @default(now())
+}
+model BusinessProfile {
+  id             String @id @default(uuid())
+  businessId     String @unique
+
+  name           String
+  description    String?
+  establishedAt  Int?
+  website        String?
+  phone          String?
+  email          String?
+  logoUrl        String?
+
+  business       Business @relation(fields: [businessId], references: [id])
 }
 
 // ===================================

@@ -26,9 +26,18 @@ class LocationController {
         longitude,
         address,
         priceRange,
-        rating,
       } = req.body;
-
+      const existingLocation = await this.prisma.location.findFirst({
+        where: {
+          name,
+          latitude,
+          longitude,
+        },
+      });
+      if (existingLocation) {
+        HttpErrors.badRequest(res, 'Location already exists');
+        return;
+      }
       const location = await this.prisma.location.create({
         data: {
           name,
@@ -38,7 +47,6 @@ class LocationController {
           longitude,
           address,
           priceRange,
-          rating,
         },
       });
 
@@ -193,7 +201,7 @@ class LocationController {
           longitude: true,
           address: true,
           priceRange: true,
-          rating: true,
+          avgRating: true,
           createdAt: true,
         },
       });
@@ -257,7 +265,7 @@ class LocationController {
             category ? { category: category as any } : {},
           ],
         },
-        orderBy: { rating: 'desc' },
+        orderBy: { avgRating: 'desc' },
         take: 50,
       });
 

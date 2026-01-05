@@ -3,6 +3,7 @@ import type { Response } from 'express';
 export interface ApiResponse<T = any> {
   statusCode: number;
   headers?: Record<string, string>;
+  success?: boolean;
   body: {
     message: string;
     data?: T;
@@ -19,6 +20,7 @@ export function makeSuccessResponse<T>(
   return {
     statusCode,
     headers,
+    success: true,
     body: {
       message: message,
       data,
@@ -35,6 +37,7 @@ export function makeErrorResponse(
   return {
     statusCode,
     headers,
+    success: false,
     body: {
       message: message,
       error: error.message,
