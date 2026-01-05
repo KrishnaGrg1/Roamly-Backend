@@ -100,16 +100,16 @@ const handleSendMessage = (
   };
 
   // 1. Broadcast to everyone (public chat)
-// io.emit('newMessage', message);
+  // io.emit('newMessage', message);
 
-// 2. Broadcast to everyone except sender
-// socket.broadcast.emit('newMessage', message);
+  // 2. Broadcast to everyone except sender
+  // socket.broadcast.emit('newMessage', message);
 
- // 3. Send to specific room (group chat)
-// io.to('room-id').emit('newMessage', message);
+  // 3. Send to specific room (group chat)
+  // io.to('room-id').emit('newMessage', message);
 
-// 4. Send to specific user (private message)
-// io.to(`user:${receiverId}`).emit('newMessage', message);
+  // 4. Send to specific user (private message)
+  // io.to(`user:${receiverId}`).emit('newMessage', message);
 
   logSocketEvent(SOCKET_EVENTS.SEND_MESSAGE, socket.userId, chatMessage);
 
@@ -121,7 +121,9 @@ const handleSendMessage = (
   socket.emit(SOCKET_EVENTS.MESSAGE_SENT, createSuccessResponse(chatMessage));
 };
 
-const handleDisconnect = (socket: AuthenticatedSocket): void => {
+const handleDisconnect = (io: Server, socket: AuthenticatedSocket): void => {
+  const timestamp = new Date().toISOString();
+  io.emit('DisconnectMessage', `UserId:${socket.userId} at ${timestamp} `);
   logSocketEvent('DISCONNECT', socket.userId, { socketId: socket.id });
 };
 
@@ -142,6 +144,6 @@ export const registerChatHandlers = (
   });
 
   socket.on('disconnect', () => {
-    handleDisconnect(socket);
+    handleDisconnect(io, socket);
   });
 };
