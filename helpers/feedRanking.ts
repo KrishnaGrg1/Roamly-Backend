@@ -11,6 +11,43 @@
 
 import type { TravelStyle } from '../generated/prisma/client';
 
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ * Returns distance in kilometers
+ */
+function calculateDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Simple lat/lng lookup for major Nepal destinations
+ * TODO: Store in database for production
+ */
+const NEPAL_DESTINATIONS: Record<string, { lat: number; lng: number }> = {
+  Kathmandu: { lat: 27.7172, lng: 85.324 },
+  Pokhara: { lat: 28.2096, lng: 83.9856 },
+  Chitwan: { lat: 27.5291, lng: 84.3542 },
+  Lumbini: { lat: 27.4833, lng: 83.2764 },
+  Nagarkot: { lat: 27.7172, lng: 85.5201 },
+  Bhaktapur: { lat: 27.6728, lng: 85.4298 },
+  Patan: { lat: 27.6684, lng: 85.3247 },
+};
+
 export type FeedMode = 'balanced' | 'nearby' | 'trek' | 'budget';
 
 export interface TripData {
@@ -80,13 +117,20 @@ export function calculateTripQualityScore(trip: TripData): number {
   }
 
   // Itinerary detail (0-20 points)
-  if (itinerary.days && Array.isArray(itinerary.days)) {
+  if (
+    itinerary.days &&
+    Array.isArray(itinerary.days) &&
+    itinerary.days.length > 0
+  ) {
     const dayCount = itinerary.days.length;
     if (dayCount >= trip.days) score += 10; // Has all days
 
-    // Check for activity details
+    // Check for activity details (handle undefined gracefully)
     const hasActivities = itinerary.days.some(
-      (day: any) => day.activities && day.activities.length > 0
+      (day: any) =>
+        day?.activities &&
+        Array.isArray(day.activities) &&
+        day.activities.length > 0
     );
     if (hasActivities) score += 10;
   }
@@ -195,12 +239,27 @@ export function calculateRelevanceScore(
     }
   }
 
-  // Location proximity (0-20 points) - simplified for now
-  // TODO: Implement with actual lat/lng calculation when available
+  // Location proximity (0-20 points)
   if (userContext.latitude && userContext.longitude) {
-    // Placeholder: boost if same country/region
-    // This would need actual geolocation logic
-    score += 10;
+    // Try to get destination coordinates
+    const destinationCoords = NEPAL_DESTINATIONS[trip.destination];
+
+    if (destinationCoords) {
+      const distance = calculateDistance(
+        userContext.latitude,
+        userContext.longitude,
+        destinationCoords.lat,
+        destinationCoords.lng
+      );
+
+      // Score based on distance (closer = better)
+      // 0-50km: 20 points, 50-150km: 10 points, >150km: 0 points
+      if (distance <= 50) {
+        score += 20;
+      } else if (distance <= 150) {
+        score += 10 * (1 - (distance - 50) / 100);
+      }
+    }
   }
 
   return Math.min(Math.max(score, 0), 100);
@@ -214,8 +273,7 @@ export function calculateRelevanceScore(
  */
 export function calculateTrustScore(
   trip: TripData,
-  userCompletedTripsCount: number = 0,
-  hasReviews: boolean = false
+  userCompletedTripsCount: number = 0
 ): number {
   let score = 30; // Base trust score
 
@@ -224,16 +282,16 @@ export function calculateTrustScore(
   if (userCompletedTripsCount >= 3) score += 15;
   if (userCompletedTripsCount >= 5) score += 15;
 
-  // Trip has linked reviews (0-20 points)
-  if (hasReviews) score += 20;
-
-  // Trip was actually completed (0-20 points)
-  if (trip.completedAt) score += 20;
+  // Trip was actually completed (0-40 points)
+  // NOTE: Review detection removed - Trip model doesn't have reviews relation
+  // Reviews are linked to Location, not Trip directly
+  if (trip.completedAt) score += 40; // Increased from 20 to compensate for removed review points
 
   return Math.min(score, 100);
 }
 
 /**
+ * 5️⃣ Calculate Freshness Score (0-100)/**
  * 5️⃣ Calculate Freshness Score (0-100)
  * Weight: 10% of final score
  *
@@ -283,13 +341,12 @@ export function calculateFeedScore(
   engagement: EngagementData,
   userContext: UserContext,
   userCompletedTripsCount: number = 0,
-  hasReviews: boolean = false,
   mode: FeedMode = 'balanced'
 ): { score: number; breakdown: ScoreBreakdown } {
   const tripQuality = calculateTripQualityScore(trip);
   const engagementScore = calculateEngagementScore(engagement);
   const relevance = calculateRelevanceScore(trip, userContext);
-  const trust = calculateTrustScore(trip, userCompletedTripsCount, hasReviews);
+  const trust = calculateTrustScore(trip, userCompletedTripsCount);
   const isTrek =
     trip.travelStyle.includes('ADVENTURE') ||
     trip.destination.toLowerCase().includes('trek');
@@ -360,28 +417,43 @@ export function calculateFeedScore(
 export function rankPosts(
   posts: any[],
   userContext: UserContext,
-  mode: FeedMode = 'balanced'
+  mode: FeedMode = 'balanced',
+  userCompletedTripsMap?: Map<string, number>
 ): PostWithScore[] {
   const rankedPosts = posts.map((post) => {
     const trip = post.trip;
+
+    // Safety check for null trip
+    if (!trip) {
+      return {
+        post,
+        score: 0,
+        breakdown: {
+          tripQuality: 0,
+          engagement: 0,
+          relevance: 0,
+          trust: 0,
+          freshness: 0,
+          total: 0,
+        },
+      };
+    }
+
     const engagement = {
       likes: post._count?.likes || 0,
       comments: post._count?.comments || 0,
       bookmarks: post._count?.bookmarks || 0,
     };
 
-    // TODO: Get user's completed trips count from database
-    const userCompletedTripsCount = 0;
-
-    // TODO: Check if trip has reviews
-    const hasReviews = false;
+    // Get user's completed trips count from the map
+    const userCompletedTripsCount =
+      userCompletedTripsMap?.get(trip.userId) || 0;
 
     const { score, breakdown } = calculateFeedScore(
       trip,
       engagement,
       userContext,
       userCompletedTripsCount,
-      hasReviews,
       mode
     );
 

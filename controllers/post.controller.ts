@@ -578,7 +578,10 @@ class PostController {
         },
       });
 
-      if (posts.length === 0) {
+      // Filter out posts without trips (safety check)
+      const validPosts = posts.filter((post) => post.tripId !== null);
+
+      if (validPosts.length === 0) {
         HttpSuccess.ok(
           res,
           {
@@ -589,6 +592,19 @@ class PostController {
         );
         return;
       }
+
+      // Fetch completed trips count for all unique post authors (for trust score)
+      const uniqueUserIds = [...new Set(validPosts.map((post) => post.tripId))];
+      const userCompletedTripsMap = new Map<string, number>();
+
+      await Promise.all(
+        uniqueUserIds.map(async (authorId) => {
+          const count = await this.prisma.trip.count({
+            where: { userId: authorId, status: 'COMPLETED' },
+          });
+          userCompletedTripsMap.set(authorId, count);
+        })
+      );
 
       // Build user context for personalization
       let userContext: UserContext = {};
@@ -608,6 +624,13 @@ class PostController {
               },
               take: 5,
               orderBy: { completedAt: 'desc' },
+            },
+            _count: {
+              select: {
+                trips: {
+                  where: { status: 'COMPLETED' },
+                },
+              },
             },
           },
         });
@@ -649,11 +672,17 @@ class PostController {
           userContext.userId = userId;
           userContext.latitude = preferences.latitude;
           userContext.longitude = preferences.longitude;
+          userContext.completedTripsCount = user._count.trips;
         }
       }
 
-      // Apply intelligent ranking
-      const rankedPosts = rankPosts(posts, userContext, mode);
+      // Apply intelligent ranking with user completed trips map
+      const rankedPosts = rankPosts(
+        validPosts,
+        userContext,
+        mode,
+        userCompletedTripsMap
+      );
 
       // Take only the requested limit after ranking
       const topPosts = rankedPosts.slice(0, Number(limit));
