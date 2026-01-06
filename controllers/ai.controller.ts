@@ -48,16 +48,20 @@ class AiController {
       const interestsStr =
         interests.length > 0 ? interests.join(', ') : 'general sightseeing';
 
-      // Get user's travel history for context (optional)
-      const userHistory = await this.prisma.travelHistory.findMany({
-        where: { userId },
+      // Get user's completed trips for context (optional)
+      const userTrips = await this.prisma.trip.findMany({
+        where: { userId, status: 'COMPLETED' },
         take: 5,
-        orderBy: { date: 'desc' },
+        orderBy: { completedAt: 'desc' },
+        select: {
+          source: true,
+          destination: true,
+        },
       });
 
       const historyContext =
-        userHistory.length > 0
-          ? `User has previously traveled from/to: ${userHistory.map((h) => `${h.source} → ${h.destination}`).join(', ')}.`
+        userTrips.length > 0
+          ? `User has previously traveled: ${userTrips.map((trip) => `${trip.source} → ${trip.destination}`).join(', ')}.`
           : '';
 
       const prompt = `You are a travel recommendation expert. Based on the following information, suggest exactly 5 places to visit.

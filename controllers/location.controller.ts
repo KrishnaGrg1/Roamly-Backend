@@ -98,29 +98,10 @@ class LocationController {
       const location = await this.prisma.location.findUnique({
         where: { id: locationId },
         include: {
-          posts: {
-            take: 10,
-            orderBy: { createdAt: 'desc' },
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  avatar: true,
-                },
-              },
-              _count: {
-                select: {
-                  likes: true,
-                  comments: true,
-                },
-              },
-            },
-          },
           _count: {
             select: {
-              posts: true,
               reviews: true,
+              bookmarks: true,
             },
           },
         },

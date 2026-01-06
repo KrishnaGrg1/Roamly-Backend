@@ -19,12 +19,17 @@ import {
   CLOUDINARY_PRESETS,
 } from '../helpers/cloudinary';
 import { prisma } from '../config/db';
+import {
+  rankPosts,
+  type FeedMode,
+  type UserContext,
+} from '../helpers/feedRanking';
 
 class PostController {
   constructor(private readonly prisma: PrismaClient) {}
 
   /**
-   * Create a new post with images
+   * Create a new post from a completed trip
    * POST /posts
    */
   public createPost = async (
@@ -39,74 +44,93 @@ class PostController {
         return;
       }
 
-      const filesObj = req.files?.images;
-      const validation = validateFiles(
-        filesObj,
-        {
-          allowedMimeTypes: FILE_CONSTRAINTS.POST_IMAGE.allowedMimeTypes,
-          maxSizeBytes: FILE_CONSTRAINTS.POST_IMAGE.maxSizeBytes,
-          fieldName: 'images',
-        },
-        10 // Max 10 images
-      );
+      const { tripId, caption } = req.body;
 
-      if (!validation.isValid) {
-        HttpErrors.badRequest(res, validation.error || 'Invalid files');
+      // Validate tripId is provided
+      if (!tripId) {
+        HttpErrors.badRequest(res, 'Trip ID is required to create a post');
         return;
       }
 
-      // Normalize to array
-      const files = Array.isArray(filesObj) ? filesObj : [filesObj!];
+      // Check if trip exists and belongs to user
+      const trip = await this.prisma.trip.findUnique({
+        where: { id: tripId },
+        include: {
+          post: true, // Check if post already exists
+        },
+      });
 
-      // Upload all images to Cloudinary in parallel
-      const uploadedImages = await uploadMultipleToCloudinary(
-        files,
-        CLOUDINARY_PRESETS.POST,
-        (index) => `post_${userId}_${Date.now()}_${index}`
-      );
+      if (!trip) {
+        HttpErrors.notFound(res, 'Trip not found');
+        return;
+      }
 
-      // Save to database
-      const caption = req.body?.caption?.trim() || null;
-      const locationId = req.body?.locationId?.trim() || null;
+      if (trip.userId !== userId) {
+        HttpErrors.badRequest(
+          res,
+          'You can only create posts from your own trips'
+        );
+        return;
+      }
 
-      const dbPromises = uploadedImages.map((image) =>
-        this.prisma.post.create({
-          data: {
-            userId,
-            mediaUrl: image.url,
-            mediaType: 'PHOTO',
-            caption,
-            locationId,
+      // BUSINESS RULE: Only completed trips can create posts
+      if (trip.status !== 'COMPLETED') {
+        HttpErrors.badRequest(
+          res,
+          'Only completed trips can be posted. Complete the trip first using POST /trip/:id/complete'
+        );
+        return;
+      }
+
+      // BUSINESS RULE: One post per trip (unique constraint enforced)
+      if (trip.post) {
+        HttpErrors.badRequest(
+          res,
+          'This trip already has a post. Each trip can only have one post.'
+        );
+        return;
+      }
+
+      // Create post from trip
+      const post = await this.prisma.post.create({
+        data: {
+          userId,
+          tripId,
+          caption: caption?.trim() || null,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              avatar: true,
+            },
           },
-          select: {
-            id: true,
-            userId: true,
-            mediaUrl: true,
-            mediaType: true,
-            caption: true,
-            locationId: true,
-            createdAt: true,
+          trip: {
+            select: {
+              id: true,
+              source: true,
+              destination: true,
+              days: true,
+              travelStyle: true,
+              itinerary: true,
+              costBreakdown: true,
+              createdAt: true,
+              completedAt: true,
+            },
           },
-        })
-      );
+        },
+      });
 
-      const posts = await Promise.all(dbPromises);
-
-      res.status(201).json(
+      HttpSuccess.created(
+        res,
         makeSuccessResponse(
-          {
-            posts,
-            count: posts.length,
-            uploadedImages: uploadedImages.map((img) => ({
-              url: img.url,
-              originalName: img.originalName,
-            })),
-          },
-          `${posts.length} image${posts.length > 1 ? 's' : ''} uploaded successfully`,
-          201
+          post,
+          'Post created successfully from completed trip'
         )
       );
     } catch (err) {
+      console.error('Error creating post:', err);
       HttpErrors.serverError(res, err, 'Create post');
     }
   };
@@ -137,11 +161,16 @@ class PostController {
               avatar: true,
             },
           },
-          location: {
+          trip: {
             select: {
               id: true,
-              name: true,
-              category: true,
+              source: true,
+              destination: true,
+              days: true,
+              travelStyle: true,
+              itinerary: true,
+              costBreakdown: true,
+              completedAt: true,
             },
           },
           _count: {
@@ -227,11 +256,6 @@ class PostController {
       await this.prisma.post.delete({
         where: { id: postId },
       });
-
-      // Delete image from Cloudinary
-      if (post.mediaUrl) {
-        await deleteFromCloudinary(post.mediaUrl);
-      }
 
       HttpSuccess.ok(
         res,
@@ -485,18 +509,42 @@ class PostController {
   };
 
   /**
-   * Get posts feed with cursor pagination
-   * GET /posts/feed?limit=10&cursor=postId
+   * Get posts feed with intelligent ranking
+   * GET /posts/feed?limit=10&cursor=postId&mode=balanced
+   *
+   * Feed Modes:
+   * - balanced (default): Standard ranking algorithm
+   * - nearby: Prioritize location relevance
+   * - trek: Boost trek/adventure content with trust
+   * - budget: Focus on budget matching
    */
   public getFeed = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const userId = req.userId;
       const { limit, cursor } = parsePaginationParams(req.query as any);
-      const cursorQuery = buildCursorQuery({ limit, cursor });
+      const mode = (req.query.mode as FeedMode) || 'balanced';
+
+      // Validate mode
+      const validModes: FeedMode[] = ['balanced', 'nearby', 'trek', 'budget'];
+      if (!validModes.includes(mode)) {
+        HttpErrors.badRequest(
+          res,
+          `Invalid feed mode. Must be one of: ${validModes.join(', ')}`
+        );
+        return;
+      }
+
+      // Fetch more posts than needed for ranking
+      // We'll rank then paginate
+      const fetchLimit = Number(limit) * 3; // Fetch 3x to allow for good ranking
 
       const posts = await this.prisma.post.findMany({
-        ...cursorQuery,
-        orderBy: { createdAt: 'desc' },
+        take: fetchLimit,
+        ...(cursor && {
+          cursor: { id: cursor },
+          skip: 1,
+        }),
+        orderBy: { createdAt: 'desc' }, // Initial fetch by recency
         include: {
           user: {
             select: {
@@ -505,11 +553,19 @@ class PostController {
               avatar: true,
             },
           },
-          location: {
+          trip: {
             select: {
               id: true,
-              name: true,
-              category: true,
+              userId: true,
+              source: true,
+              destination: true,
+              days: true,
+              budgetMin: true,
+              budgetMax: true,
+              travelStyle: true,
+              itinerary: true,
+              costBreakdown: true,
+              completedAt: true,
             },
           },
           _count: {
@@ -522,15 +578,97 @@ class PostController {
         },
       });
 
+      if (posts.length === 0) {
+        HttpSuccess.ok(
+          res,
+          {
+            posts: [],
+            pagination: { hasNextPage: false, nextCursor: null },
+          },
+          'Feed retrieved successfully'
+        );
+        return;
+      }
+
+      // Build user context for personalization
+      let userContext: UserContext = {};
+
+      if (userId) {
+        // Get user preferences from their profile or past trips
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            preferences: true,
+            trips: {
+              where: { status: 'COMPLETED' },
+              select: {
+                travelStyle: true,
+                budgetMin: true,
+                budgetMax: true,
+              },
+              take: 5,
+              orderBy: { completedAt: 'desc' },
+            },
+          },
+        });
+
+        if (user) {
+          // Extract preferences
+          const preferences = (user.preferences as any) || {};
+
+          // Calculate average budget from past trips
+          const completedTrips = user.trips;
+          if (completedTrips.length > 0) {
+            const budgets = completedTrips
+              .filter((t) => t.budgetMin && t.budgetMax)
+              .map((t) => ({ min: t.budgetMin!, max: t.budgetMax! }));
+
+            if (budgets.length > 0) {
+              userContext.preferredBudgetMin =
+                budgets.reduce((sum, b) => sum + b.min, 0) / budgets.length;
+              userContext.preferredBudgetMax =
+                budgets.reduce((sum, b) => sum + b.max, 0) / budgets.length;
+            }
+          }
+
+          // Extract preferred travel styles
+          const styleMap = new Map<string, number>();
+          completedTrips.forEach((trip) => {
+            trip.travelStyle.forEach((style) => {
+              styleMap.set(style, (styleMap.get(style) || 0) + 1);
+            });
+          });
+
+          if (styleMap.size > 0) {
+            userContext.preferredStyles = Array.from(styleMap.entries())
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 3)
+              .map(([style]) => style as any);
+          }
+
+          userContext.userId = userId;
+          userContext.latitude = preferences.latitude;
+          userContext.longitude = preferences.longitude;
+        }
+      }
+
+      // Apply intelligent ranking
+      const rankedPosts = rankPosts(posts, userContext, mode);
+
+      // Take only the requested limit after ranking
+      const topPosts = rankedPosts.slice(0, Number(limit));
+
       // Add user interaction flags if authenticated
-      let postsWithInteraction = posts.map((post) => ({
-        ...post,
+      let postsWithInteraction = topPosts.map((ranked) => ({
+        ...ranked.post,
+        _feedScore: ranked.score,
+        _scoreBreakdown: ranked.breakdown,
         isLiked: false,
         isBookmarked: false,
       }));
 
-      if (userId && posts.length > 0) {
-        const postIds = posts.map((post) => post.id);
+      if (userId && topPosts.length > 0) {
+        const postIds = topPosts.map((ranked) => ranked.post.id);
 
         const [userLikes, userBookmarks] = await Promise.all([
           this.prisma.like.findMany({
@@ -546,22 +684,36 @@ class PostController {
         const likedPostIds = new Set(userLikes.map((l) => l.postId));
         const bookmarkedPostIds = new Set(userBookmarks.map((b) => b.postId));
 
-        postsWithInteraction = posts.map((post) => ({
-          ...post,
-          isLiked: likedPostIds.has(post.id),
-          isBookmarked: bookmarkedPostIds.has(post.id),
+        postsWithInteraction = topPosts.map((ranked) => ({
+          ...ranked.post,
+          _feedScore: ranked.score,
+          _scoreBreakdown: ranked.breakdown,
+          isLiked: likedPostIds.has(ranked.post.id),
+          isBookmarked: bookmarkedPostIds.has(ranked.post.id),
         }));
       }
+
+      // Determine if there are more posts available
+      const hasNextPage = rankedPosts.length > Number(limit);
+      const nextCursor =
+        hasNextPage && topPosts.length > 0
+          ? topPosts[topPosts.length - 1]!.post.id
+          : null;
 
       HttpSuccess.ok(
         res,
         {
           posts: postsWithInteraction,
-          pagination: buildPaginationResponse(posts, limit),
+          pagination: {
+            hasNextPage,
+            nextCursor,
+            mode,
+          },
         },
         'Feed retrieved successfully'
       );
     } catch (err) {
+      console.error('Feed error:', err);
       HttpErrors.serverError(res, err, 'Get feed');
     }
   };

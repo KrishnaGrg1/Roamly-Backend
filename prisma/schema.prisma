@@ -105,15 +105,14 @@ model User {
   posts         Post[]
   bookmarks     Bookmark[]
   reviews       Review[]
-  travelHistory TravelHistory[]
   comments      Comment[]
   likes         Like[]
-  routes        Route[]
   trips         Trip[]
   businesses    Business[]
   bookings      Booking[]
   aiLogs        AiInteraction[]
   refreshTokens RefreshToken[]
+  chatSessions  AIChatSession[]
 }
 
 // ===================================
@@ -139,22 +138,20 @@ model RefreshToken {
 // ===================================
 
 model Post {
-  id         String    @id @default(uuid())
-  userId     String
-  caption    String?
-  mediaUrl   String
-  mediaType  MediaType
-  locationId String?
-  createdAt  DateTime  @default(now())
+  id        String   @id @default(uuid())
+  userId    String
+  tripId    String   @unique
+  caption   String?
+  createdAt DateTime @default(now())
 
-  user      User       @relation(fields: [userId], references: [id])
-  location  Location?  @relation(fields: [locationId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+  trip Trip @relation(fields: [tripId], references: [id])
+
   comments  Comment[]
   likes     Like[]
   bookmarks Bookmark[]
 
   @@index([createdAt])
-  @@index([locationId])
 }
 
 model Comment {
@@ -197,13 +194,14 @@ model Bookmark {
 // ===================================
 
 model Location {
-  id          String           @id @default(uuid())
-  name        String
-  category    LocationCategory
-  description String?
-  latitude    Float
-  longitude   Float
-  address     String?
+  id            String           @id @default(uuid())
+  googlePlaceId String?          @unique
+  name          String
+  category      LocationCategory
+  description   String?
+  latitude      Float
+  longitude     Float
+  address       String?
 
   priceRange String?
   avgRating  Float?
@@ -214,7 +212,6 @@ model Location {
 
   createdAt DateTime @default(now())
 
-  posts      Post[]
   reviews    Review[]
   embeddings LocationEmbedding?
   bookmarks  Bookmark[]
@@ -263,6 +260,7 @@ model Review {
   id         String   @id @default(uuid())
   userId     String
   locationId String
+  tripId     String?
   rating     Int
   comment    String?
   createdAt  DateTime @default(now())
@@ -299,17 +297,85 @@ model LocationEmbedding {
 }
 
 model AiInteraction {
-  id       String @id @default(uuid())
+  id       String  @id @default(uuid())
   userId   String
-  prompt   String
-  response Json
+  tripId   String?
+  purpose  String
+  prompt   String?
+  response Json?
   model    String
   tokens   Int?
-  feedback Int?
+  cost     Float?
 
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user User  @relation(fields: [userId], references: [id])
+  trip Trip? @relation(fields: [tripId], references: [id])
+}
+
+// ===================================
+// AI CHAT SYSTEM
+// ===================================
+
+enum ChatIntent {
+  PLAN
+  MODIFY
+  COMPARE
+  RECALL
+  EXPLORE
+  GENERAL
+}
+
+enum ChatMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model AIChatSession {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String?
+  intent    ChatIntent?
+  active    Boolean  @default(true)
+  
+  messageCount Int @default(0)
+  tokenCount   Int @default(0)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user     User              @relation(fields: [userId], references: [id])
+  messages AIChatMessage[]
+  
+  @@index([userId, active])
+}
+
+model AIChatMessage {
+  id        String          @id @default(uuid())
+  sessionId String
+  role      ChatMessageRole
+  content   String
+  tokens    Int?
+  
+  createdAt DateTime @default(now())
+  
+  session    AIChatSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  references AIContextReference[]
+  
+  @@index([sessionId])
+}
+
+model AIContextReference {
+  id        String  @id @default(uuid())
+  messageId String
+  
+  refType   String // "TRIP", "POST", "LOCATION", "REVIEW"
+  refId     String
+  
+  message AIChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  
+  @@index([messageId])
 }
 
 // ===================================
@@ -317,45 +383,31 @@ model AiInteraction {
 // ===================================
 
 model Trip {
-  id     String     @id @default(uuid())
-  userId String
-  status TripStatus @default(GENERATED)
+  id        String     @id @default(uuid())
+  userId    String
+  status    TripStatus @default(GENERATED)
 
-  startLocation String
-  days          Int
-  budget        String
-  travelStyle   TravelStyle[]
+  title       String?
+  source      String
+  destination String
+  days        Int
+  budgetMin   Float?
+  budgetMax   Float?
+
+  travelStyle TravelStyle[]
 
   itinerary     Json
   costBreakdown Json?
 
-  createdAt DateTime @default(now())
+  aiModel   String?
+  aiVersion String?
 
-  user User @relation(fields: [userId], references: [id])
-}
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
 
-model Route {
-  id          String   @id @default(uuid())
-  userId      String
-  sourceLat   Float
-  sourceLng   Float
-  destLat     Float
-  destLng     Float
-  distanceKm  Float?
-  durationMin Float?
-  createdAt   DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-}
-
-model TravelHistory {
-  id          String   @id @default(uuid())
-  userId      String
-  source      String
-  destination String
-  date        DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
+  user         User            @relation(fields: [userId], references: [id])
+  post         Post?
+  aiLogs       AiInteraction[]
 }
 
 // ===================================
