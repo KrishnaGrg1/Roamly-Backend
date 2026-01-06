@@ -131,6 +131,11 @@ class AuthController {
         sameSite: 'strict',
         path: '/auth/refresh',
       });
+      res.cookie('accessToken', accessToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'strict',
+      });
       res.status(200).json(
         makeSuccessResponse(
           {
