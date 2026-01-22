@@ -12,6 +12,9 @@ import {
 } from '../helpers/standardResponse';
 import type { PrismaClient } from '../generated/prisma/client';
 import type { AuthRequest } from '../middlewares/auth.middleware';
+import { sendEmailToken } from '../helpers/generateOtp';
+import { EmailTopic } from '../helpers/emailMessage';
+import logger from '../helpers/logger';
 
 class AuthController {
   private readonly SALT_ROUNDS = Number(env.BCRYPT_SALT_ROUNDS);
@@ -33,7 +36,7 @@ class AuthController {
       });
 
       if (existingUser) {
-        HttpErrors.notFound(res, 'User');
+        HttpErrors.badRequest(res, 'User already exists');
         return;
       }
 
@@ -53,7 +56,21 @@ class AuthController {
           createdAt: true,
         },
       });
-
+      const otp = await sendEmailToken(
+        email,
+        name,
+        EmailTopic.VerifyEmail,
+        newUser.id
+      );
+      logger.debug('OTP sent for verification email');
+      const hashedOTP = await bcrypt.hash(otp, 10);
+      await this.prisma.otp.create({
+        data: {
+          otp_code: hashedOTP,
+          userId: newUser.id,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        },
+      });
       HttpSuccess.created(res, newUser, 'User registered successfully');
       return;
     } catch (err) {
@@ -73,6 +90,7 @@ class AuthController {
           name: true,
           password: true,
           role: true,
+          isVerified: true,
         },
       });
 
@@ -101,6 +119,28 @@ class AuthController {
               401
             )
           );
+        return;
+      }
+      if (!user.isVerified) {
+        const otp = await sendEmailToken(
+          email,
+          user.name,
+          EmailTopic.VerifyEmail,
+          user.id
+        );
+        logger.debug('OTP sent for verification email');
+        const hashedOTP = await bcrypt.hash(otp, 10);
+        await this.prisma.otp.create({
+          data: {
+            otp_code: hashedOTP,
+            userId: user.id,
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+          },
+        });
+        HttpErrors.badRequest(
+          res,
+          'User not verified and OTP sent successfully'
+        );
         return;
       }
 
@@ -148,6 +188,45 @@ class AuthController {
       );
     } catch (err) {
       HttpErrors.serverError(res, err, 'Login error');
+    }
+  };
+
+  public forgetPassword = async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const { email } = req.body;
+      const existingUser = await this.prisma.user.findUnique({
+        where: {
+          email,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+      if (!existingUser) {
+        HttpErrors.notFound(res, 'User');
+        return;
+      }
+      const otp = await sendEmailToken(
+        email,
+        existingUser.name,
+        EmailTopic.VerifyEmail,
+        existingUser.id
+      );
+      logger.debug('OTP sent for verification email');
+      const hashedOTP = await bcrypt.hash(otp, 10);
+      await this.prisma.otp.create({
+        data: {
+          otp_code: hashedOTP,
+          userId: existingUser.id,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        },
+      });
+    } catch (err) {
+      HttpErrors.serverError(res, err, 'Get me failed');
     }
   };
 

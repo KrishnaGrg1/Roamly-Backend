@@ -82,6 +82,16 @@ enum BusinessStatus {
   SUSPENDED
 }
 
+
+model Otp {
+  id        String   @id @default(cuid())
+  otp_code  String
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
 // ===================================
 // USER
 // ===================================
@@ -93,10 +103,10 @@ model User {
   password String
   avatar   String?
   role     UserRole @default(USER)
-
+  isVerified      Boolean           @default(false)
   subscriptionTier SubscriptionTier @default(FREE)
   subscriptionEnds DateTime?
-
+  otps            Otp[]
   preferences Json?
 
   createdAt DateTime @default(now())
@@ -386,7 +396,7 @@ model Trip {
   id        String     @id @default(uuid())
   userId    String
   status    TripStatus @default(GENERATED)
-
+  destinationInfoId String?    
   title       String?
   source      String
   destination String
@@ -406,9 +416,25 @@ model Trip {
   completedAt DateTime?
 
   user         User            @relation(fields: [userId], references: [id])
+  destinationInfo  DestinationInfo?     @relation(fields: [destinationInfoId], references: [id])
   post         Post?
   aiLogs       AiInteraction[]
 }
+model DestinationInfo {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  minDays   Int      @default(1)
+  maxDays   Int?
+  difficulty String?
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  trips     Trip[]
+}
+
+
+
 
 // ===================================
 // BOOKINGS & PAYMENTS
@@ -432,4 +458,46 @@ model Booking {
 
   @@index([userId])
   @@index([businessId])
+}
+
+
+model ProtectedArea {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  category     String
+  feesNPR      Json
+  childPolicy  String
+  paymentLocation Json
+  verified     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model TrekkingPermit {
+  id              String   @id @default(uuid())
+  area            String
+  district        String
+  feeUSD          Json
+  issuingAuthority String
+  verified        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model MountaineeringRoyalty {
+  id          String   @id @default(uuid())
+  mountain    String?
+  category    String?  // e.g., "Peaks 7000-7500m"
+  heightM     Int?
+  route       String?
+  currency    String
+  royalty     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SeasonDefinition {
+  id      String   @id @default(uuid())
+  season  String
+  months  Json
 }

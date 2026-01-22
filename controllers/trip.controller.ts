@@ -54,11 +54,7 @@ class TripController {
   ): Promise<void> => {
     try {
       const userId = req.userId;
-
-      if (!userId) {
-        HttpErrors.unauthorized(res);
-        return;
-      }
+      if (!userId) return HttpErrors.unauthorized(res);
 
       const {
         source,
@@ -70,7 +66,42 @@ class TripController {
         title,
       } = req.body as GenerateTripBody;
 
-      // Build AI prompt for itinerary generation
+      // -----------------------------
+      // 1️⃣ Feasibility Validation
+      // -----------------------------
+      const minDaysForDestination: Record<string, number> = {
+        'Annapurna Base Camp': 7,
+        'Everest Base Camp': 10,
+        Mustang: 4,
+        'Kathmandu-Pokhara': 2,
+      };
+
+      const minDays = minDaysForDestination[destination];
+      if (minDays && days < minDays) {
+        // Suggest alternatives automatically
+        const alternatives = [
+          {
+            type: 'extend_days',
+            message: `Increase your trip to at least ${minDays} days for ${destination}.`,
+            suggestedDays: minDays,
+          },
+          {
+            type: 'alternative_destination',
+            message: 'Shorter trips nearby are possible.',
+            suggestedDestinations: ['Ghorepani Poon Hill', 'Sarangkot'],
+          },
+        ];
+
+        return HttpSuccess.ok(res, {
+          error: true,
+          message: `The trip to ${destination} in ${days} days is not feasible.`,
+          alternatives,
+        });
+      }
+
+      // -----------------------------
+      // 2️⃣ Build AI Prompt
+      // -----------------------------
       const budgetInfo =
         budgetMin && budgetMax
           ? `Budget: $${budgetMin} - $${budgetMax}`
@@ -80,11 +111,12 @@ class TripController {
               ? `Maximum budget: $${budgetMax}`
               : 'Flexible budget';
 
-      const prompt = `Create a detailed ${days}-day travel itinerary from ${source} to ${destination}.
+      const prompt = `
+Generate a detailed ${days}-day travel itinerary from ${source} to ${destination}.
 Travel style: ${travelStyle.join(', ')}
 ${budgetInfo}
 
-Please provide a structured JSON response with the following format:
+Provide structured JSON only in this format:
 {
   "overview": "Brief trip overview",
   "days": [
@@ -98,7 +130,8 @@ Please provide a structured JSON response with the following format:
           "location": "Location name",
           "description": "Brief description",
           "estimatedCost": 50,
-          "duration": "2 hours"
+          "duration": "2 hours",
+          "trustLevel": "Unverified"
         }
       ],
       "accommodation": {
@@ -122,31 +155,31 @@ Please provide a structured JSON response with the following format:
   },
   "tips": ["Travel tip 1", "Travel tip 2"],
   "totalEstimatedCost": 1500
-}`;
+}
+`;
 
-      // Call AI to generate itinerary
+      // -----------------------------
+      // 3️⃣ Call AI
+      // -----------------------------
       const aiResponse = await OpenAIChat({ prompt });
-
-      if (!aiResponse || !aiResponse.content) {
-        HttpErrors.serverError(
+      if (!aiResponse?.content)
+        return HttpErrors.serverError(
           res,
           new Error('AI response empty'),
           'Failed to generate itinerary'
         );
-        return;
-      }
 
-      // Parse AI response
+      // -----------------------------
+      // 4️⃣ Parse AI JSON
+      // -----------------------------
       let itinerary: Record<string, any>;
       try {
-        // Try to parse as JSON
         const content = aiResponse.content;
         const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) ||
           content.match(/```\n([\s\S]*?)\n```/) || [null, content];
         const jsonString = jsonMatch[1] || content;
         itinerary = JSON.parse(jsonString.trim());
-      } catch (error) {
-        // If parsing fails, store as text with basic structure
+      } catch {
         itinerary = {
           type: 'text',
           content: aiResponse.content,
@@ -154,43 +187,54 @@ Please provide a structured JSON response with the following format:
         };
       }
 
-      // Extract cost breakdown if available
+      // -----------------------------
+      // 5️⃣ Assign Trust Levels
+      // -----------------------------
+      // By default, AI-generated activities are Unverified
+      itinerary.days?.forEach((day: any) => {
+        day.activities?.forEach((activity: any) => {
+          activity.trustLevel = 'Unverified';
+        });
+      });
+
+      // -----------------------------
+      // 6️⃣ Compute Cost Breakdown
+      // -----------------------------
       const costBreakdown = itinerary.totalEstimatedCost
         ? {
-            accommodation:
-              itinerary.days?.reduce(
-                (sum: number, day: any) =>
-                  sum + (day.accommodation?.estimatedCost || 0),
-                0
-              ) || 0,
-            activities:
-              itinerary.days?.reduce(
-                (sum: number, day: any) =>
-                  sum +
-                    day.activities?.reduce(
-                      (daySum: number, activity: any) =>
-                        daySum + (activity.estimatedCost || 0),
-                      0
-                    ) || 0,
-                0
-              ) || 0,
-            meals:
-              itinerary.days?.reduce(
-                (sum: number, day: any) =>
-                  sum +
-                    day.meals?.reduce(
-                      (mealSum: number, meal: any) =>
-                        mealSum + (meal.estimatedCost || 0),
-                      0
-                    ) || 0,
-                0
-              ) || 0,
+            accommodation: itinerary.days?.reduce(
+              (sum: number, day: any) =>
+                sum + (day.accommodation?.estimatedCost || 0),
+              0
+            ),
+            activities: itinerary.days?.reduce(
+              (sum: number, day: any) =>
+                sum +
+                  day.activities?.reduce(
+                    (daySum: number, act: any) =>
+                      daySum + (act.estimatedCost || 0),
+                    0
+                  ) || 0,
+              0
+            ),
+            meals: itinerary.days?.reduce(
+              (sum: number, day: any) =>
+                sum +
+                  day.meals?.reduce(
+                    (mealSum: number, meal: any) =>
+                      mealSum + (meal.estimatedCost || 0),
+                    0
+                  ) || 0,
+              0
+            ),
             transportation: itinerary.transportation?.estimatedCost || 0,
             total: itinerary.totalEstimatedCost || 0,
           }
         : null;
 
-      // Create trip in database
+      // -----------------------------
+      // 7️⃣ Save Trip in Database
+      // -----------------------------
       const trip = await this.prisma.trip.create({
         data: {
           userId,
@@ -200,7 +244,7 @@ Please provide a structured JSON response with the following format:
           budgetMin,
           budgetMax,
           travelStyle,
-          title: title || `${source} to ${destination} - ${days} days`,
+          title: title || `${source} → ${destination} - ${days} days`,
           itinerary,
           costBreakdown: costBreakdown || undefined,
           status: 'GENERATED',
@@ -209,7 +253,9 @@ Please provide a structured JSON response with the following format:
         },
       });
 
-      // Log AI interaction
+      // -----------------------------
+      // 8️⃣ Log AI Interaction
+      // -----------------------------
       await this.prisma.aiInteraction.create({
         data: {
           userId,
