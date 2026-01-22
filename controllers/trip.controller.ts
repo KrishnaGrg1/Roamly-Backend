@@ -48,6 +48,22 @@ class TripController {
    * Generate a new trip itinerary using AI
    * POST /trip/generate
    */
+  public getDistance = (
+    p1: { lat: number; lng: number },
+    p2: { lat: number; lng: number }
+  ): number => {
+    const R = 6371; // km
+    const dLat = ((p2.lat - p1.lat) * Math.PI) / 180;
+    const dLng = ((p2.lng - p1.lng) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((p1.lat * Math.PI) / 180) *
+        Math.cos((p2.lat * Math.PI) / 180) *
+        Math.sin(dLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
   public generateTrip = async (
     req: AuthRequest,
     res: Response
@@ -66,36 +82,121 @@ class TripController {
         title,
       } = req.body as GenerateTripBody;
 
-      // -----------------------------
-      // 1️⃣ Feasibility Validation
-      // -----------------------------
-      const minDaysForDestination: Record<string, number> = {
-        'Annapurna Base Camp': 7,
-        'Everest Base Camp': 10,
-        Mustang: 4,
-        'Kathmandu-Pokhara': 2,
-      };
+      // // -----------------------------
+      // // 1️⃣ Feasibility Validation
+      // // -----------------------------
+      // const minDaysForDestination: Record<string, number> = {
+      //   'Annapurna Base Camp': 5,
+      //   'Everest Base Camp': 10,
+      //   Mustang: 4,
+      //   'Kathmandu-Pokhara': 2,
+      // };
 
-      const minDays = minDaysForDestination[destination];
-      if (minDays && days < minDays) {
-        // Suggest alternatives automatically
-        const alternatives = [
-          {
-            type: 'extend_days',
-            message: `Increase your trip to at least ${minDays} days for ${destination}.`,
-            suggestedDays: minDays,
+      // const minDays = minDaysForDestination[destination];
+      // if (minDays && days < minDays) {
+      //   // Suggest alternatives automatically
+      //   const alternatives = [
+      //     {
+      //       type: 'extend_days',
+      //       message: `Increase your trip to at least ${minDays} days for ${destination}.`,
+      //       suggestedDays: minDays,
+      //     },
+      //     {
+      //       type: 'alternative_destination',
+      //       message: 'Shorter trips nearby are possible.',
+      //       suggestedDestinations: ['Ghorepani Poon Hill', 'Sarangkot'],
+      //     },
+      //   ];
+
+      //   return HttpSuccess.ok(res, {
+      //     error: true,
+      //     message: `The trip to ${destination} in ${days} days is not feasible.`,
+      //     alternatives,
+      //   });
+      // }
+
+      // 1. Extract coordinates FIRST
+      const coordPrompt = `
+        Extract latitude and longitude for these Nepal locations ONLY. Return JSON format.
+
+        Source: "${source}"
+        Destination: "${destination}"
+
+        Use these known Nepal coordinates when possible:
+        - Pokhara: 28.2096, 83.9856  
+        - Kathmandu: 27.7172, 85.3240
+        - Annapurna Base Camp: 28.5398, 83.8554
+        - Nayapul: 28.4417, 83.8042
+
+        Return ONLY valid JSON:
+        {
+          "source": {
+            "name": "${source}",
+            "lat": 28.2096,
+            "lng": 83.9856,
+            "confidence": "high/medium/low"
           },
+          "destination": {
+            "name": "${destination}", 
+            "lat": 28.5398,
+            "lng": 83.8554,
+            "confidence": "high/medium/low"
+          }
+        }
+      `;
+
+      const coordResponse = await OpenAIChat({ prompt: coordPrompt });
+      let coordinates: any;
+      if (!coordResponse?.content) {
+        HttpErrors.serverError(
+          res,
+          new Error('AI response empty'),
+          'Failed to generate itinerary'
+        );
+        return;
+      }
+      try {
+        coordinates = JSON.parse(coordResponse.content);
+      } catch (e) {
+        // Fallback to hardcoded
+        coordinates = {
+          source: { lat: 28.2096, lng: 83.9856, confidence: 'high' }, // Pokhara default
+          destination: { lat: 28.5398, lng: 83.8554, confidence: 'low' },
+        };
+      }
+      const distanceKm = this.getDistance(
+        { lat: coordinates.source.lat, lng: coordinates.source.lng },
+        { lat: coordinates.destination.lat, lng: coordinates.destination.lng }
+      );
+      // -----------------------------
+      // 1️⃣ DYNAMIC FEASIBILITY CHECK (NEW)
+      // -----------------------------
+      const travelHoursOneWay = distanceKm / 50; // 50km/hr Nepal average (roads/flights)
+      const totalTravelHours = travelHoursOneWay * 2; // Round trip
+      const availableActivityHours = days * 12; // 12 usable hours/day
+      console.log('travel hours', totalTravelHours);
+      console.log('availableActivity hours', availableActivityHours * 0.8);
+      // Block impossible trips
+      if (totalTravelHours > availableActivityHours * 0.8) {
+        // 80% travel = too much
+        const partialPlans = [
           {
-            type: 'alternative_destination',
-            message: 'Shorter trips nearby are possible.',
-            suggestedDestinations: ['Ghorepani Poon Hill', 'Sarangkot'],
+            type: 'partial_journey',
+            name: `${destination} Preview Day`,
+            description: `Distance ${distanceKm.toFixed(0)}km requires ${(totalTravelHours / 24).toFixed(1)} days minimum travel. Try closer viewpoint.`,
+            requiredDays: Math.ceil(totalTravelHours / 12),
+            estimatedCost: 100,
+            feasibility: 'Impossible',
+            alternatives: ['Scenic flight', 'Nearby viewpoint'],
           },
         ];
 
         return HttpSuccess.ok(res, {
           error: true,
-          message: `The trip to ${destination} in ${days} days is not feasible.`,
-          alternatives,
+          message: `Impossible: ${source}→${destination} (${distanceKm.toFixed(0)}km) needs ${(totalTravelHours / 24).toFixed(1)} travel days minimum`,
+          distanceKm: distanceKm.toFixed(1),
+          travelHours: totalTravelHours.toFixed(1),
+          feasiblePlans: partialPlans,
         });
       }
 
@@ -111,52 +212,50 @@ class TripController {
               ? `Maximum budget: $${budgetMax}`
               : 'Flexible budget';
 
-      const prompt = `
-Generate a detailed ${days}-day travel itinerary from ${source} to ${destination}.
-Travel style: ${travelStyle.join(', ')}
-${budgetInfo}
+      const prompt = `Generate a detailed ${days}-day travel itinerary from ${source} to ${destination}.
+        Travel style: ${travelStyle.join(', ')}
+        Rs{budgetInfo}
 
-Provide structured JSON only in this format:
-{
-  "overview": "Brief trip overview",
-  "days": [
-    {
-      "day": 1,
-      "title": "Day title",
-      "activities": [
+        Provide structured JSON only in this format:
         {
-          "time": "09:00 AM",
-          "activity": "Activity name",
-          "location": "Location name",
-          "description": "Brief description",
-          "estimatedCost": 50,
-          "duration": "2 hours",
-          "trustLevel": "Unverified"
-        }
-      ],
-      "accommodation": {
-        "name": "Hotel name",
-        "estimatedCost": 100,
-        "location": "Location"
-      },
-      "meals": [
-        {
-          "type": "breakfast/lunch/dinner",
-          "suggestion": "Restaurant name or type",
-          "estimatedCost": 20
-        }
-      ]
-    }
-  ],
-  "transportation": {
-    "toDestination": "How to get there",
-    "withinDestination": "How to get around",
-    "estimatedCost": 200
-  },
-  "tips": ["Travel tip 1", "Travel tip 2"],
-  "totalEstimatedCost": 1500
-}
-`;
+          "overview": "Brief trip overview",
+          "days": [
+            {
+              "day": 1,
+              "title": "Day title",
+              "activities": [
+                {
+                  "time": "09:00 AM",
+                  "activity": "Activity name",
+                  "location": "Location name",
+                  "description": "Brief description",
+                  "estimatedCost": 50,
+                  "duration": "2 hours",
+                  "trustLevel": "Unverified"
+                }
+              ],
+              "accommodation": {
+                "name": "Hotel name",
+                "estimatedCost": 100,
+                "location": "Location"
+                  },
+              "meals": [
+                {
+                  "type": "breakfast/lunch/dinner",
+                  "suggestion": "Restaurant name or type",
+                  "estimatedCost": 20
+                }
+              ]
+            }
+          ],
+          "transportation": {
+            "toDestination": "How to get there",
+            "withinDestination": "How to get around",
+            "estimatedCost": 200
+          },
+          "tips": ["Travel tip 1", "Travel tip 2"],
+          "totalEstimatedCost": 1500
+        }`;
 
       // -----------------------------
       // 3️⃣ Call AI

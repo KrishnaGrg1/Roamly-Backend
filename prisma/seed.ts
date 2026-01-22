@@ -195,32 +195,175 @@ async function main() {
   // Protected Areas
   // =========================
   const protectedAreas = [
+    // --- National Parks (UNESCO World Heritage Sites) ---
     {
       name: 'Chitwan National Park',
       category: 'UNESCO Natural World Heritage Site',
-      feesNPR: { nepali: 100, saarc: 750, foreigner: 1500 },
+      feesNPR: { nepali: 150, saarc: 1000, foreigner: 2000 },
       childPolicy: 'Below 10 years free',
-      paymentLocation: 'At entry point',
+      paymentLocation: [
+        'Tourist Service Center, Bhrikutimandap, Kathmandu',
+        'Park entrance gates (Sauraha, Kasara)',
+      ],
     },
     {
       name: 'Sagarmatha National Park',
       category: 'UNESCO Natural World Heritage Site',
-      feesNPR: { nepali: 0, saarc: 1500, foreigner: 3000 },
+      feesNPR: { nepali: 100, saarc: 1500, foreigner: 3000 },
       childPolicy: 'Below 10 years free',
       paymentLocation: [
-        'DNPWC Counter, Tourist Service Center, Bhrikutimandap, Kathmandu',
+        'DNPWC Counter, Bhrikutimandap, Kathmandu',
         'Entry point at Monjo',
       ],
     },
+
+    // --- Other National Parks ---
+    {
+      name: 'Bardia National Park',
+      category: 'National Park',
+      feesNPR: { nepali: 100, saarc: 750, foreigner: 1500 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: [
+        'DNPWC Counter, Kathmandu',
+        'Park entrance at Thakurdwara',
+      ],
+    },
+    {
+      name: 'Banke National Park',
+      category: 'National Park',
+      feesNPR: { nepali: 100, saarc: 750, foreigner: 1500 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: ['DNPWC Counter, Kathmandu', 'Park entrance at Obari'],
+    },
+    {
+      name: 'Shivapuri-Nagarjun National Park',
+      category: 'National Park',
+      feesNPR: { nepali: 100, saarc: 600, foreigner: 1000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation:
+        'At entry point gates (Budhanilkantha, Sundarijal, Panimuhan)',
+    },
+    {
+      name: 'Langtang National Park',
+      category: 'National Park',
+      feesNPR: { nepali: 100, saarc: 1500, foreigner: 3000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: ['DNPWC Counter, Kathmandu', 'Entry point at Dhunche'],
+    },
+    {
+      name: 'Makalu-Barun National Park',
+      category: 'National Park',
+      feesNPR: { nepali: 100, saarc: 1500, foreigner: 3000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: ['DNPWC Counter, Kathmandu', 'Park entry point'],
+    },
+    {
+      name: 'Rara National Park',
+      category: 'National Park',
+      feesNPR: { nepali: 100, saarc: 1500, foreigner: 3000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: [
+        'DNPWC Counter, Kathmandu',
+        'Entry point at Talcha/Hutu',
+      ],
+    },
+    {
+      name: 'Shey-Phoksundo National Park',
+      category: 'National Park',
+      feesNPR: { nepali: 100, saarc: 1500, foreigner: 3000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: ['DNPWC Counter, Kathmandu', 'Entry point at Suligad'],
+    },
+    {
+      name: 'Khaptad National Park',
+      category: 'National Park',
+      feesNPR: { nepali: 100, saarc: 500, foreigner: 1500 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: ['DNPWC Counter, Kathmandu', 'Entry point at Jhingrana'],
+    },
+    {
+      name: 'Shuklaphanta National Park',
+      category: 'National Park',
+      feesNPR: { nepali: 100, saarc: 750, foreigner: 1500 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: [
+        'DNPWC Counter, Kathmandu',
+        'Park entrance at Majhgaun',
+      ],
+    },
+    {
+      name: 'Parsa National Park',
+      category: 'National Park',
+      feesNPR: { nepali: 100, saarc: 750, foreigner: 1500 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: 'At entry point (Adhabar)',
+    },
+
+    // --- Wildlife Reserves ---
+    {
+      name: 'Koshi Tappu Wildlife Reserve',
+      category: 'Wildlife Reserve',
+      feesNPR: { nepali: 100, saarc: 750, foreigner: 1500 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: 'At Reserve Entry Point (Kushaha)',
+    },
+
+    // --- Conservation Areas ---
     {
       name: 'Annapurna Conservation Area (ACAP)',
       category: 'Conservation Area',
-      feesNPR: { nepali: 0, saarc: 200, foreigner: 2000 },
+      feesNPR: { nepali: 100, saarc: 1000, foreigner: 3000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: ['ACAP Counter, Kathmandu', 'ACAP Counter, Pokhara'],
+    },
+    {
+      name: 'Manaslu Conservation Area (MCAP)',
+      category: 'Conservation Area',
+      feesNPR: { nepali: 100, saarc: 1000, foreigner: 3000 },
       childPolicy: 'Below 10 years free',
       paymentLocation: [
-        'ACAP Counter, Bhrikutimandap, Kathmandu',
-        'ACAP Counter, Pokhara',
-        'Park entry point',
+        'NTNC/MCAP Counter, Kathmandu',
+        'NTNC Counter, Pokhara',
+      ],
+    },
+    {
+      name: 'Gaurishanker Conservation Area (GCAP)',
+      category: 'Conservation Area',
+      feesNPR: { nepali: 100, saarc: 1000, foreigner: 3000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: ['NTNC Counter, Kathmandu', 'Entry point at Shivalaya'],
+    },
+    {
+      name: 'Kanchenjunga Conservation Area (KCAP)',
+      category: 'Conservation Area',
+      feesNPR: { nepali: 100, saarc: 500, foreigner: 2000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: ['DNPWC Counter, Kathmandu', 'Entry point at Taplejung'],
+    },
+    {
+      name: 'Api Nampa Conservation Area',
+      category: 'Conservation Area',
+      feesNPR: { nepali: 100, saarc: 500, foreigner: 2000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: ['DNPWC Counter, Kathmandu', 'Entry point at Darchula'],
+    },
+    {
+      name: 'Blackbuck Conservation Area',
+      category: 'Conservation Area',
+      feesNPR: { nepali: 100, saarc: 500, foreigner: 2000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: 'At entry point (Khairapur, Bardia)',
+    },
+
+    // --- Hunting Reserve ---
+    {
+      name: 'Dhorpatan Hunting Reserve',
+      category: 'Hunting Reserve',
+      feesNPR: { nepali: 100, saarc: 1500, foreigner: 3000 },
+      childPolicy: 'Below 10 years free',
+      paymentLocation: [
+        'DNPWC Office, Babarmahal, Kathmandu',
+        'Reserve Entry Point',
       ],
     },
   ];
