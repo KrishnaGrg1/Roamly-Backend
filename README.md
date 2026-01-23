@@ -142,20 +142,337 @@ Base URL: `/api/v1`
 | PUT    | `/:id`          | Update trip details                   | ✅            |
 | POST   | `/:id/complete` | Mark trip as completed                | ✅            |
 | POST   | `/:id/save`     | Save trip (GENERATED → SAVED)         | ✅            |
+| GET    | `/save`         | Get saved trip(status=SAVED)          | ✅            |
 | POST   | `/:id/cancel`   | Cancel trip                           | ✅            |
 | DELETE | `/:id`          | Delete trip (only if no post exists)  | ✅            |
 
 **Generate Trip Request:**
 
 ```json
+// ========================================
+// HEALTH-AWARE TRIP PLANNING EXAMPLES
+// ========================================
+
+// EXAMPLE 1: Asthma - Lower Altitude Trek
+{
+  "source": "Pokhara",
+  "destination": "Poon Hill",
+  "startDate": "2026-03-15",
+  "endDate": "2026-03-19",
+  "budgetMax": 15000,
+  "budgetMin": 10000,
+  "travelStyle": ["RELAXED", "CULTURAL"],
+  "travelType": "nepali",
+  "healthIssue": "Asthma - moderate severity, need to avoid high altitude above 3500m"
+}
+
+// Expected AI Response:
+// - Maximum altitude: 3210m (Poon Hill)
+// - Gradual ascent with extra rest days
+// - Activities marked with difficulty levels
+// - Tips: "Carry inhaler, avoid dusty trails"
+// - Medical facilities: "Nearest clinic in Ghandruk"
+
+
+// ========================================
+// EXAMPLE 2: Heart Condition - Gentle Safari
+{
+  "source": "Kathmandu",
+  "destination": "Chitwan",
+  "startDate": "2026-07-10",
+  "endDate": "2026-07-13",
+  "budgetMax": 20000,
+  "budgetMin": 15000,
+  "travelStyle": ["RELAXED"],
+  "travelType": "foreigner",
+  "healthIssue": "Controlled heart condition, avoid strenuous activities and high altitude"
+}
+
+// Expected AI Response:
+// - Low-intensity activities only
+// - Canoe rides, elephant breeding center visits
+// - No long jungle walks or treks
+// - Jeep safari instead of walking safari
+// - Tips: "Stay near medical facilities, carry medications"
+// - Hotel with medical support nearby
+
+
+// ========================================
+// EXAMPLE 3: Knee Problems - Accessible Tour
+{
+  "source": "Kathmandu",
+  "destination": "Pokhara",
+  "startDate": "2026-10-05",
+  "endDate": "2026-10-10",
+  "budgetMax": 30000,
+  "budgetMin": 20000,
+  "travelStyle": ["CULTURAL", "RELAXED"],
+  "travelType": "saarc",
+  "healthIssue": "Chronic knee pain, difficulty with stairs and long walks"
+}
+
+// Expected AI Response:
+// - Accessible attractions (boat rides, museums)
+// - Hotels with elevators
+// - Short, flat walking tours
+// - Private vehicle for sightseeing
+// - Avoid: Swayambhunath steps, World Peace Pagoda climb
+// - Include: Phewa Lake boat ride, International Mountain Museum
+
+
+// ========================================
+// EXAMPLE 4: Diabetes - Controlled Trek
+{
+  "source": "Kathmandu",
+  "destination": "Langtang Valley",
+  "startDate": "2026-04-10",
+  "endDate": "2026-04-19",
+  "budgetMax": 40000,
+  "budgetMin": 30000,
+  "travelStyle": ["ADVENTURE"],
+  "travelType": "nepali",
+  "healthIssue": "Type 1 Diabetes, need regular meals and insulin storage"
+}
+
+// Expected AI Response:
+// - Regular meal times scheduled
+// - Shorter daily walking distances
+// - Hotels with refrigeration for insulin
+// - Gradual altitude gain
+// - Tips: "Pack extra glucose tablets, inform guide"
+// - Medical: "Nearest health post at Kyanjin Gompa"
+
+
+// ========================================
+// EXAMPLE 5: Senior Traveler - Easy Pace
 {
   "source": "Kathmandu",
   "destination": "Annapurna Base Camp",
-  "days": 10,
-  "budgetMin": 500,
-  "budgetMax": 700,
-  "travelStyle": ["ADVENTURE", "BACKPACKING"]
+  "startDate": "2026-10-15",
+  "endDate": "2026-10-25",
+  "budgetMax": 50000,
+  "budgetMin": 35000,
+  "travelStyle": ["ADVENTURE", "RELAXED"],
+  "travelType": "foreigner",
+  "healthIssue": "65 years old, good health but need slower pace and more rest days"
 }
+
+// Expected AI Response:
+// - Extended itinerary (10 days vs typical 7)
+// - Extra acclimatization days
+// - Shorter daily trekking distances (3-4 hours max)
+// - Better accommodation options
+// - Porter service recommended
+// - Tips: "Take it slow, listen to your body"
+
+
+// ========================================
+// EXAMPLE 6: Pregnancy - Safe Sightseeing
+{
+  "source": "Kathmandu",
+  "destination": "Kathmandu Valley",
+  "startDate": "2026-11-01",
+  "endDate": "2026-11-05",
+  "budgetMax": 25000,
+  "budgetMin": 15000,
+  "travelStyle": ["CULTURAL", "RELAXED"],
+  "travelType": "nepali",
+  "healthIssue": "Second trimester pregnancy (5 months), avoid high altitude and strenuous activities"
+}
+
+// Expected AI Response:
+// - Valley sightseeing only (no mountain trips)
+// - Comfortable transport (private car)
+// - Frequent rest breaks
+// - Clean, hygienic restaurants
+// - Avoid: Long walks, crowded places
+// - Include: Bhaktapur, Patan Durbar Square
+// - Medical: "Nearby hospitals listed"
+
+
+// ========================================
+// EXAMPLE 7: Altitude Sickness History
+{
+  "source": "Kathmandu",
+  "destination": "Everest Base Camp",
+  "startDate": "2026-04-15",
+  "endDate": "2026-05-01",
+  "budgetMax": 150000,
+  "budgetMin": 100000,
+  "travelStyle": ["ADVENTURE"],
+  "travelType": "foreigner",
+  "healthIssue": "Previous altitude sickness at 3800m, need extra acclimatization days"
+}
+
+// Expected AI Response:
+// - EXTENDED itinerary (16 days instead of 12)
+// - Multiple acclimatization days
+// - Gradual ascent profile
+// - Alternative route via Gokyo (lower altitude option)
+// - Tips: "Diamox prophylaxis recommended, consult doctor"
+// - Emergency evacuation plan included
+// - Medical: "Helicopter evacuation insurance required"
+
+
+// ========================================
+// EXAMPLE 8: Allergies - Dietary Restrictions
+{
+  "source": "Pokhara",
+  "destination": "Ghorepani",
+  "startDate": "2026-09-10",
+  "endDate": "2026-09-15",
+  "budgetMax": 18000,
+  "budgetMin": 12000,
+  "travelStyle": ["ADVENTURE"],
+  "travelType": "saarc",
+  "healthIssue": "Severe nut allergy and gluten intolerance"
+}
+
+// Expected AI Response:
+// - Meal suggestions without nuts
+// - Gluten-free options highlighted
+// - Communication tips for tea houses
+// - Pre-order meals when possible
+// - Tips: "Carry allergy card in Nepali"
+// - Emergency: "Carry EpiPen, inform guide"
+
+
+// ========================================
+// EXPECTED RESPONSE STRUCTURE
+// ========================================
+
+{
+  "itinerary": {
+    "overview": "Customized itinerary considering asthma condition...",
+    "season": "Spring",
+    "healthConsiderations": "This itinerary is designed for someone with moderate asthma. Maximum altitude kept below 3500m to minimize breathing difficulties. All activities are low to moderate intensity.",
+    "healthIssue": "Asthma - moderate severity, need to avoid high altitude above 3500m",
+    "days": [
+      {
+        "day": 1,
+        "date": "2026-03-15",
+        "title": "Pokhara to Tikhedhunga",
+        "activities": [
+          {
+            "time": "09:00 AM",
+            "activity": "Drive to Nayapul",
+            "difficultyLevel": "Easy",
+            "description": "Comfortable jeep ride...",
+            "estimatedCost": 800
+          },
+          {
+            "time": "11:00 AM",
+            "activity": "Gentle walk to Tikhedhunga",
+            "difficultyLevel": "Easy",
+            "duration": "3 hours",
+            "description": "Flat terrain, take breaks as needed",
+            "estimatedCost": 0
+          }
+        ]
+      }
+    ],
+    "safetyPrecautions": [
+      "Carry asthma inhaler at all times",
+      "Inform guide about your condition",
+      "Take breaks if breathing becomes difficult",
+      "Nearest health post: Ghandruk (20 min from trail)",
+      "Helicopter evacuation available from Ghorepani",
+      "Avoid dusty trails during windy days"
+    ],
+    "tips": [
+      "Pack your medication in accessible pocket",
+      "Spring: Clear air is better for asthma",
+      "Drink plenty of water to stay hydrated",
+      "Walk at your own pace, don't rush",
+      "Consider hiring a porter to reduce load"
+    ]
+  },
+  "costBreakdown": {
+    "total": 14500,
+    "entryFees": 100,
+    // ... other costs
+  }
+}
+
+
+// ========================================
+// HEALTH CONDITION CATEGORIES
+// ========================================
+
+/*
+COMMON HEALTH ISSUES SUPPORTED:
+
+1. RESPIRATORY:
+   - Asthma
+   - COPD
+   - Sleep apnea
+   → Lower altitude, shorter treks
+
+2. CARDIOVASCULAR:
+   - Heart conditions
+   - High blood pressure
+   - Previous heart surgery
+   → Low-intensity activities, avoid altitude
+
+3. MOBILITY:
+   - Knee/joint problems
+   - Back pain
+   - Hip issues
+   → Accessible routes, shorter walks
+
+4. METABOLIC:
+   - Diabetes
+   - Thyroid issues
+   → Regular meals, temperature control
+
+5. AGE-RELATED:
+   - Senior travelers (65+)
+   - Children under 10
+   → Slower pace, frequent breaks
+
+6. PREGNANCY:
+   - Any trimester
+   → Low altitude, comfortable transport
+
+7. ALTITUDE SENSITIVITY:
+   - Previous AMS
+   - Altitude sickness history
+   → Extra acclimatization days
+
+8. ALLERGIES:
+   - Food allergies
+   - Environmental allergies
+   → Dietary planning, medication
+*/
+
+
+// ========================================
+// SAFETY RECOMMENDATIONS BY CONDITION
+// ========================================
+
+/*
+ALTITUDE LIMITS:
+
+- Heart/Lung conditions: Max 3000m
+- Pregnancy: Max 2500m
+- Diabetes: Max 4000m (with precautions)
+- Senior travelers: Max 3500m
+- Previous AMS: Extra acclimatization above 3000m
+
+ACTIVITY INTENSITY:
+
+- Severe conditions: Easy only (< 3 hours/day)
+- Moderate conditions: Easy-Moderate (3-5 hours/day)
+- Mild conditions: All levels (with caution)
+
+MEDICAL SUPPORT:
+
+- Always inform guide
+- Carry sufficient medication
+- Travel insurance mandatory
+- Know nearest medical facilities
+- Evacuation plan in place
+*/
 ```
 
 **Trip Status Lifecycle:**

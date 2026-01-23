@@ -140,7 +140,7 @@ class TripController {
     string,
     { minDays: number; minBudget: number }
   > = {
-    'Annapurna Base Camp': { minDays: 7, minBudget: 15000 },
+    'Annapurna Base Camp': { minDays: 5, minBudget: 15000 },
     'Everest Base Camp': { minDays: 12, minBudget: 80000 },
     'Langtang Valley': { minDays: 7, minBudget: 20000 },
     'Manaslu Circuit': { minDays: 14, minBudget: 50000 },
