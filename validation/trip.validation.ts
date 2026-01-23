@@ -18,11 +18,12 @@ class TripValidation {
           .min(2, { message: 'Destination must contain at least 2 characters' })
           .max(200, { message: 'Destination must not exceed 200 characters' })
           .trim(),
-        days: z
-          .number({ message: 'Number of days is required' })
-          .int({ message: 'Days must be a whole number' })
-          .min(1, { message: 'Trip must be at least 1 day' })
-          .max(90, { message: 'Trip cannot exceed 90 days' }),
+        startDate: z.coerce.date({
+          message: 'Start date is required',
+        }),
+        endDate: z.coerce.date({
+          message: 'End date is required',
+        }),
         budgetMin: z
           .number({ message: 'Minimum budget must be a number' })
           .min(0, { message: 'Budget cannot be negative' })
@@ -49,6 +50,7 @@ class TripValidation {
           .max(200, { message: 'Title must not exceed 200 characters' })
           .trim()
           .optional(),
+        travelType: z.enum(['saarc', 'nepali', 'foreigner']),
       })
       .refine(
         (data) => {
