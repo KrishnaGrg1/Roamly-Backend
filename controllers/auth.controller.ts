@@ -225,6 +225,7 @@ class AuthController {
           expiresAt: new Date(Date.now() + 10 * 60 * 1000),
         },
       });
+      HttpSuccess.ok(res, existingUser, 'Forget Password successfully');
     } catch (err) {
       HttpErrors.serverError(res, err, 'Get me failed');
     }
@@ -354,6 +355,147 @@ class AuthController {
         .json(makeSuccessResponse(null, 'Logged out successfully', 200));
     } catch (err) {
       HttpErrors.serverError(res, err, 'Logout error');
+    }
+  };
+  public verifyEmail = async (req: Request, res: Response): Promise<void> => {
+    const { userId, otp } = req.body;
+    try {
+      const existingUser = await this.prisma.user.findFirst({
+        where: {
+          id: userId,
+        },
+      });
+      if (!existingUser) {
+        HttpErrors.notFound(res, 'User');
+        return;
+      }
+      if (existingUser.isVerified) {
+        HttpErrors.badRequest(res, 'User already verified');
+        return;
+      }
+      const exitingOtp = await this.prisma.otp.findFirst({
+        where: {
+          userId: userId,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+      if (!exitingOtp) {
+        HttpErrors.badRequest(res, 'Invalid otp');
+        return;
+      }
+      if (exitingOtp.expiresAt < new Date()) {
+        await this.prisma.otp.delete({
+          where: {
+            id: exitingOtp.id,
+          },
+        });
+        HttpErrors.badRequest(res, 'Otp expired');
+        return;
+      }
+      const otpValid = await bcrypt.compare(
+        otp.toString().trim(),
+        exitingOtp.otp_code
+      );
+      if (!otpValid) {
+        HttpErrors.badRequest(res, 'Invalid otp');
+        return;
+      }
+      await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id: userId },
+          data: { isVerified: true },
+        }),
+        this.prisma.otp.delete({
+          where: { id: exitingOtp.id },
+        }),
+      ]);
+
+      HttpSuccess.ok(res, null, 'User verified successfully');
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        res
+          .status(500)
+          .json(makeErrorResponse(e, 'error.auth.unexpected', 500));
+      } else {
+        res
+          .status(500)
+          .json(
+            makeErrorResponse(
+              new Error('Unexpected error'),
+              'error.auth.unexpected',
+              500
+            )
+          );
+      }
+    }
+  };
+  public resetPassword = async (req: Request, res: Response): Promise<void> => {
+    const { otp, userId, newPassword } = req.body;
+    try {
+      await this.prisma.$transaction(async (tx: any) => {
+        // Find user
+        const existingUser = await tx.user.findUnique({
+          where: { id: userId },
+        });
+
+        if (!existingUser) {
+          HttpErrors.notFound(res, 'User');
+          return;
+        }
+
+        // Fetch latest OTP and compare hashed value (otp_code is a hashed string)
+        const latestOtp = await tx.otp.findFirst({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (!latestOtp) {
+          HttpErrors.notFound(res, 'Otp');
+          return;
+        }
+
+        const providedOtp = otp?.toString().trim();
+        if (!providedOtp) {
+          HttpErrors.badRequest(res, 'Invalid Otp');
+          return;
+        }
+
+        const otpValid = await bcrypt.compare(providedOtp, latestOtp.otp_code);
+        if (!otpValid) {
+          HttpErrors.badRequest(res, 'Invalid otp');
+          return;
+        }
+
+        // Hash the new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        // Update password & delete OTP inside the same ongoing transaction
+        await tx.user.update({
+          where: { id: userId },
+          data: { password: hashedPassword },
+        });
+        await tx.otp.delete({ where: { id: latestOtp.id } });
+        HttpSuccess.ok(res, existingUser, 'Password reset successfully');
+        return;
+      });
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        res
+          .status(500)
+          .json(makeErrorResponse(e, 'error.auth.unexpected', 500));
+      } else {
+        res
+          .status(500)
+          .json(
+            makeErrorResponse(
+              new Error('Unexpected error'),
+              'error.auth.unexpected',
+              500
+            )
+          );
+      }
     }
   };
 }

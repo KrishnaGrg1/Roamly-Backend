@@ -1,12 +1,10 @@
 import env from '../config/env';
 
-// Define enum
 export enum EmailTopic {
   ForgotPassword = 'forgot-password',
   VerifyEmail = 'verify-email',
 }
 
-// Props interface
 interface HtmlProps {
   token: string;
   username: string;
@@ -14,70 +12,17 @@ interface HtmlProps {
   userId?: string | number;
 }
 
-// Function to get message
 const message = (topic: EmailTopic): string => {
   switch (topic) {
     case EmailTopic.ForgotPassword:
-      return 'You requested to reset your password. Use the token below to complete the process:';
+      return 'You requested to reset your password. Use the button below or enter the token in the app to continue.';
     case EmailTopic.VerifyEmail:
-      return 'Thank you for signing up! Please click the button below to verify your email address:';
+      return 'Welcome! Please verify your email using the button below or enter the token in the app.';
     default:
       return '';
   }
 };
 
-const verifyEmailButton = (
-  topic: EmailTopic,
-  token: string,
-  userId?: string | number
-): string => {
-  const baseUrl =
-    env.NODE_ENV === 'production'
-      ? 'https://melevelup.me/eng'
-      : 'http://localhost:3000/eng';
-
-  switch (topic) {
-    case EmailTopic.ForgotPassword:
-      return `<a 
-        href="${baseUrl}/reset-password?token=${token}&id=${userId}" 
-        style="
-          display:inline-block;
-          background-color:#4f46e5;
-          color:#ffffff;
-          font-size:16px;
-          font-weight:bold;
-          text-decoration:none;
-          padding:14px 28px;
-          border-radius:8px;
-          box-shadow:0 4px 10px rgba(0,0,0,0.15);
-          transition:background-color 0.3s ease;
-        "
-      >
-         Reset Password
-      </a>
-      `;
-    default:
-      return `<a 
-        href="${baseUrl}/verify-email?token=${token}&id=${userId}" 
-        style="
-          display:inline-block;
-          background-color:#4f46e5;
-          color:#ffffff;
-          font-size:16px;
-          font-weight:bold;
-          text-decoration:none;
-          padding:14px 28px;
-          border-radius:8px;
-          box-shadow:0 4px 10px rgba(0,0,0,0.15);
-          transition:background-color 0.3s ease;
-        "
-      >
-        Verify Email
-      </a>
-      `;
-  }
-};
-// Function to get a nicer title
 const subject = (topic: EmailTopic): string => {
   switch (topic) {
     case EmailTopic.ForgotPassword:
@@ -89,64 +34,122 @@ const subject = (topic: EmailTopic): string => {
   }
 };
 
-// HTML template
+const actionButton = (
+  topic: EmailTopic,
+  token: string,
+  userId?: string | number
+): string => {
+  const baseUrl =
+    env.NODE_ENV === 'production'
+      ? 'https://melevelup.me/eng'
+      : 'http://localhost:3000/eng';
+
+  const href =
+    topic === EmailTopic.ForgotPassword
+      ? `${baseUrl}/reset-password?token=${token}&id=${userId}`
+      : `${baseUrl}/verify-email?token=${token}&id=${userId}`;
+
+  const label =
+    topic === EmailTopic.ForgotPassword ? 'Reset Password' : 'Verify Email';
+
+  return `
+    <a href="${href}"
+      style="
+        display:inline-block;
+        width:100%;
+        max-width:280px;
+        background:#4f46e5;
+        color:#ffffff;
+        text-decoration:none;
+        font-size:16px;
+        font-weight:600;
+        padding:14px 24px;
+        border-radius:10px;
+        text-align:center;
+      ">
+      ${label}
+    </a>
+  `;
+};
+
 const html = ({ token, topic, username, userId }: HtmlProps): string => {
   return `<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>${subject(topic)}</title>
-  </head>
-  <body style="margin:0; padding:0; font-family: Arial, sans-serif; background-color:#f4f6f8;">
-    <table width="100%" cellspacing="0" cellpadding="0" border="0" style="padding:40px 0;">
-      <tr>
-        <td align="center">
-          <table width="600" cellpadding="20" cellspacing="0" border="0" style="background:#ffffff; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
-            
-            <!-- Header -->
-            <tr>
-              <td align="center" style="border-bottom:1px solid #eee; padding:30px;">
-                <h2 style="margin:0; color:#333;">${subject(topic)}</h2>
-              </td>
-            </tr>
-            
-            <!-- Body -->
-            <tr>
-              <td style="padding:30px; color:#555; font-size:16px; line-height:1.6;">
-                <p>Dear ${username},</p>
-                <p>${message(topic)}</p>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${subject(topic)}</title>
+</head>
 
-               
-               
-                
-                       
-                 <div style="margin:30px 0; text-align:center;">
-                    ${verifyEmailButton(topic, token, userId)}
-                    
-                </div>
-              </td>
-            </tr>
-            
-            <!-- Footer -->
-            <tr>
-              <td align="center" style="border-top:1px solid #eee; padding:20px; font-size:14px; color:#999;">
-                <p>Thank you,<br /><b>The LevelUp Team</b></p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
+<body style="margin:0; padding:0; background:#f4f6f8; font-family:Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px; background:#ffffff; border-radius:16px; overflow:hidden;">
+
+          <!-- Header -->
+          <tr>
+            <td style="padding:28px; text-align:center; background:#4f46e5; color:#ffffff;">
+              <h1 style="margin:0; font-size:22px;">${subject(topic)}</h1>
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding:32px; color:#333; font-size:16px; line-height:1.6;">
+              <p style="margin-top:0;">Hi <b>${username}</b>,</p>
+              <p>${message(topic)}</p>
+
+              <!-- CTA -->
+              <div style="margin:32px 0; text-align:center;">
+                ${actionButton(topic, token, userId)}
+              </div>
+
+              <!-- Token Box -->
+              <div style="
+                background:#f9fafb;
+                border:1px dashed #c7d2fe;
+                border-radius:12px;
+                padding:20px;
+                text-align:center;
+                margin-top:24px;
+              ">
+                <p style="margin:0 0 8px; font-size:14px; color:#555;">
+                  Or enter this token in the app:
+                </p>
+                <p style="
+                  margin:0;
+                  font-size:20px;
+                  font-weight:700;
+                  letter-spacing:2px;
+                  color:#111;
+                ">
+                  ${token}
+                </p>
+              </div>
+
+              <p style="margin-top:24px; font-size:14px; color:#777;">
+                If you didn’t request this, you can safely ignore this email.
+                <br />Never share your token with anyone.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px; text-align:center; font-size:13px; color:#999; background:#fafafa;">
+              <p style="margin:0;">
+                — The <b>Roamly</b> Team
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
 </html>`;
 };
 
-// ✅ Example usage
-// const emailHtml = html({
-//   token: "123456",
-//   username: "Suyan",
-//   topic: EmailTopic.VerifyEmail,
-// });
-
-// console.log(emailHtml);
 export default html;

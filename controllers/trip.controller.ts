@@ -26,6 +26,7 @@ interface GenerateTripBody {
   endDate: Date;
   budgetMin?: number;
   budgetMax?: number;
+  number_of_traveller: number;
   travelStyle?: TravelStyle[];
   title?: string;
   travelType?: 'nepali' | 'saarc' | 'foreigner';
@@ -162,6 +163,7 @@ class TripController {
         endDate,
         budgetMin,
         budgetMax,
+        number_of_traveller,
         travelStyle = ['CULTURAL'],
         title,
         travelType = 'nepali',
@@ -409,75 +411,135 @@ YOU MUST:
         : '';
 
       const prompt = `Generate a detailed realistic ${days}-day travel itinerary from ${source} to ${destination} in Nepal.
-      Travel Dates: ${new Date(startDate).toLocaleDateString()} to ${new Date(endDate).toLocaleDateString()}
-      Season: ${season}
-      Travel style: ${travelStyle.join(', ')}
-      ${budgetInfo}
+
+Travel Dates: ${new Date(startDate).toLocaleDateString()} to ${new Date(endDate).toLocaleDateString()}
+Season: ${season}
+Travel Style: ${travelStyle.join(', ')}
+Number of Travelers: ${number_of_traveller}
+${budgetInfo}
+Traveler Type: ${travelType.toUpperCase()}
+
 ${entryFeeInfo}
 ${healthInfo}
+
+🚨 CRITICAL COST RULES 🚨
+- ALL costs must be TOTAL costs for ${number_of_traveller} traveler${number_of_traveller > 1 ? 's' : ''}, NOT per person
+- Entry fee: NPR ${applicableEntryFee} per person × ${number_of_traveller} = NPR ${applicableEntryFee * number_of_traveller} TOTAL
+- Accommodation: Multiply room cost × number of rooms needed
+- Meals: Multiply meal cost × ${number_of_traveller} people
+- Activities: Multiply activity cost × ${number_of_traveller} people
+- Transportation: Calculate for ${number_of_traveller} people (some transport is shared, some is per-person)
+
 STRICT RULES (MUST FOLLOW):
-- Allowed transport modes: ${allowedTransportModes.join(', ')}
-- Helicopters are FORBIDDEN unless explicitly allowed
-- Stay within total budget (NPR)
-- Trekking destinations require walking days (no road access)
-- Accommodation must match budget (budget lodges if low budget)
-- If entry fees are provided above, MUST include the exact amount (NPR ${applicableEntryFee}) in the itinerary cost breakdown
-- Use realistic Nepal prices for meals, accommodation, and transport
-- Consider ${season} season weather and conditions in your recommendations
-- Mention season-specific tips (e.g., "Spring: Rhododendrons in bloom", "Monsoon: Carry rain gear")
-${healthIssue ? '- PRIORITIZE traveler safety given their health condition - adjust difficulty and include health precautions' : ''}
-      Provide structured JSON only in this format:
-      {
-        "overview": "Brief trip overview",
-        "season": "${season}",
-        "seasonalInfo": "Season-specific notes and weather conditions",
-        ${healthIssue ? '"healthConsiderations": "Important health and safety notes for the traveler\'s condition",' : ''}
-        "transportation": {
-          "mode": "BUS | JEEP | TREK | FLIGHT | HELICOPTER",
+✓ Allowed transport modes: ${allowedTransportModes.join(', ')}
+✓ Helicopters are FORBIDDEN unless explicitly in allowed list
+✓ Total cost MUST stay within budget: ${budgetMax ? `NPR ${budgetMax}` : 'flexible'}
+✓ Trekking destinations require walking days (no direct road access to base camps)
+✓ Use realistic Nepal prices (${season} season rates):
+  - Dal Bhat: NPR 400-1000 per person
+  - Tourist meals: NPR 600-1200 per person
+  - Local bus: NPR 500-2000 (depends on distance)
+  - Tourist bus: NPR 1500-3000
+  - Domestic flight: NPR 10,000-25,000 per person
+  - Jeep hire: NPR 8,000-15,000 per day (shared among group)
+✓ Entry fees: If protected area is mentioned above, use EXACT amount NPR ${applicableEntryFee * number_of_traveller} total
+✓ Consider ${season} weather: ${season === 'Spring' ? 'Warm, clear skies, blooming rhododendrons' : season === 'Summer' ? 'Monsoon rains, leeches on trails, cloud cover' : season === 'Autumn' ? 'Clear skies, best trekking season, colder at altitude' : 'Cold, snow at high altitude, clear mountain views'}
+✓ Include season-specific tips and gear recommendations
+${healthIssue ? '✓ PRIORITIZE safety for traveler with health condition: adjust difficulty, include rest days, recommend accessible alternatives, mention nearby medical facilities' : ''}
+
+TRUST LEVEL DEFINITIONS (assign to each activity):
+- "Verified" - Confirmed place/activity with reliable information
+- "Popular" - Well-known activity mentioned in multiple travel sources
+- "Unverified" - AI-generated suggestion, should be verified before trip
+- "Seasonal" - Activity availability depends on season/weather
+
+Provide ONLY valid JSON in this exact format (no markdown, no backticks):
+
+{
+  "overview": "Brief engaging overview of this ${days}-day trip",
+  "season": "${season}",
+  "seasonalInfo": "Detailed ${season} weather conditions, temperature range, what to expect, gear recommendations",
+  ${healthIssue ? `"healthConsiderations": "Safety notes for traveler with ${healthIssue}: difficulty adjustments, medical facilities nearby, emergency contacts",` : ''}
+  "transportation": {
+    "mode": "${allowedTransportModes[0]}",
+    "estimatedCost": 0,
+    "toDestination": "Detailed route from ${source} to ${destination} (transport type, duration, booking tips)",
+    "withinDestination": "How to get around ${destination} area (walking, local transport options)"
+  },
+  "days": [
+    ${Array.from({ length: days }, (_, i) => {
+      const dayDate = new Date(startDate);
+      dayDate.setDate(dayDate.getDate() + i);
+      return `{
+      "day": ${i + 1},
+      "date": "${dayDate.toISOString().split('T')[0]}",
+      "title": "Descriptive day title",
+      "activities": [
+        {
+          "time": "09:00 AM",
+          "activity": "Activity name",
+          "location": "Specific location",
+          "description": "What you'll do and see (2-3 sentences)",
           "estimatedCost": 0,
-          "toDestination": "How to get there",
-          "withinDestination": "How to get around"
-        },
-        "days": [
-          {
-            "day": 1,
-            "date": "${new Date(startDate).toISOString().split('T')[0]}",
-            "title": "Day title",
-            "activities": [
-              {
-                "time": "09:00 AM",
-                "activity": "Activity name",
-                "location": "Location name",
-                "description": "Brief description",
-                "estimatedCost": 50,
-                "duration": "2 hours",
-                ${healthIssue ? '"difficultyLevel": "Easy/Moderate/Challenging",' : ''}
-                "trustLevel": "Unverified"
-              }
-            ],
-            "accommodation": {
-              "name": "Hotel name",
-              "estimatedCost": 100,
-              "location": "Location"
-            },
-            "meals": [
-              {
-                "type": "breakfast/lunch/dinner",
-                "suggestion": "Restaurant name or type",
-                "estimatedCost": 20
-              }
-            ]
-          }
-        ],
-        "entryFees": {
-          "name": "Protected area name (if applicable)",
-          "cost": ${applicableEntryFee},
-          "description": "Entry fee details"
-        },
-        ${healthIssue ? '"safetyPrecautions": ["Health-specific safety tip 1", "Nearest medical facility info", "Emergency contact info"],' : ''}
-        "tips": ["Travel tip 1", "Season-specific tip", ${healthIssue ? '"Health-related precaution",' : ''} "Travel tip 3"],
-        "totalEstimatedCost": 1500
-      }`;
+          "duration": "X hours",
+          ${healthIssue ? '"difficultyLevel": "Easy|Moderate|Challenging",' : ''}
+          "trustLevel": "Verified|Popular|Unverified|Seasonal"
+        }
+      ],
+      "accommodation": {
+        "name": "Specific hotel/lodge name or type",
+        "estimatedCost": 0,
+        "location": "Neighborhood/area",
+        "type": "Hotel|Lodge|Teahouse|Guesthouse"
+      },
+      "meals": [
+        {
+          "type": "breakfast|lunch|dinner",
+          "suggestion": "Restaurant name or dish type",
+          "estimatedCost": 0
+        }
+      ]
+    }`;
+    }).join(',\n    ')}
+  ],
+  ${
+    applicableEntryFee > 0
+      ? `"entryFees": {
+    "name": "${protectedArea?.name || 'Protected Area'}",
+    "cost": ${applicableEntryFee * number_of_traveller},
+    "perPersonCost": ${applicableEntryFee},
+    "description": "${travelType === 'nepali' ? 'Nepali citizen entry fee' : travelType === 'saarc' ? 'SAARC nation entry fee' : 'Foreign visitor entry fee'} for ${number_of_traveller} traveler${number_of_traveller > 1 ? 's' : ''}"
+  },`
+      : ''
+  }
+  ${
+    healthIssue
+      ? `"safetyPrecautions": [
+    "Health-specific safety tip for ${healthIssue}",
+    "Nearest medical facility: [Name and location]",
+    "Emergency contact: [Number]",
+    "Recommended altitude limit and acclimatization schedule"
+  ],`
+      : ''
+  }
+  "tips": [
+    "Practical travel tip for ${season} season",
+    "Cultural etiquette or local custom",
+    "Money/ATM availability tip",
+    "Packing recommendation for ${season}",
+    ${healthIssue ? '"Health precaution related to activities",' : ''}
+    "Safety or communication tip"
+  ],
+  "totalEstimatedCost": 0
+}
+
+FINAL CHECK BEFORE RESPONDING:
+1. Is totalEstimatedCost = sum of all daily costs + transportation + entry fees?
+2. Are ALL costs multiplied by ${number_of_traveller} where applicable?
+3. Does entry fee = ${applicableEntryFee * number_of_traveller}?
+4. Are all activities realistic for ${season} season?
+5. Is accommodation quality matched to budget tier?
+${healthIssue ? `6. Are difficulty levels appropriate for someone with ${healthIssue}?` : ''}`;
 
       // -----------------------------
       // 6️⃣ CALL AI

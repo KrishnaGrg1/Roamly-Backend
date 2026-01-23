@@ -24,6 +24,9 @@ class TripValidation {
         endDate: z.coerce.date({
           message: 'End date is required',
         }),
+        number_of_traveller: z.number({
+          message: 'Number of travelller is required ',
+        }),
         budgetMin: z
           .number({ message: 'Minimum budget must be a number' })
           .min(0, { message: 'Budget cannot be negative' })
