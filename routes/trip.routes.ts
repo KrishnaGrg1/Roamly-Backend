@@ -26,6 +26,16 @@ tripRoutes.get(
 );
 
 /**
+ * GET /trip/save
+ * Get user's trips with optional status filter
+ */
+tripRoutes.get(
+  '/save',
+  validate(tripValidation.myTrips),
+  tripController.getsaveTrips
+);
+
+/**
  * GET /trip/:id
  * Get a single trip by ID with full details
  */

@@ -29,6 +29,7 @@ interface GenerateTripBody {
   travelStyle?: TravelStyle[];
   title?: string;
   travelType?: 'nepali' | 'saarc' | 'foreigner';
+  healthIssue?: string;
 }
 
 interface UpdateTripBody {
@@ -164,6 +165,7 @@ class TripController {
         travelStyle = ['CULTURAL'],
         title,
         travelType = 'nepali',
+        healthIssue,
       } = req.body as GenerateTripBody;
 
       // Calculate days from date range
@@ -180,6 +182,9 @@ class TripController {
       console.log('📅 End Date:', endDate);
       console.log('📆 Total Days:', days);
       console.log('🍂 Season:', season);
+      if (healthIssue) {
+        console.log('🏥 Health Issue:', healthIssue);
+      }
 
       let allowedTransportModes: string[] = [];
 
@@ -384,12 +389,32 @@ DO NOT use any other entry fee amount.
               ? `Maximum budget: NPR ${budgetMax}`
               : 'Flexible budget';
 
+      // Health considerations
+      const healthInfo = healthIssue
+        ? `
+CRITICAL HEALTH INFORMATION:
+The traveler has the following health condition: ${healthIssue}
+
+YOU MUST:
+- Adjust activity intensity and difficulty levels accordingly
+- Recommend appropriate altitude limits (if applicable)
+- Suggest gradual acclimatization schedules
+- Include rest days if needed
+- Avoid strenuous activities that may aggravate the condition
+- Recommend accessible alternatives for challenging activities
+- Include health and safety precautions in tips
+- Suggest nearby medical facilities in the itinerary
+- Consider evacuation accessibility
+`
+        : '';
+
       const prompt = `Generate a detailed realistic ${days}-day travel itinerary from ${source} to ${destination} in Nepal.
       Travel Dates: ${new Date(startDate).toLocaleDateString()} to ${new Date(endDate).toLocaleDateString()}
       Season: ${season}
       Travel style: ${travelStyle.join(', ')}
       ${budgetInfo}
 ${entryFeeInfo}
+${healthInfo}
 STRICT RULES (MUST FOLLOW):
 - Allowed transport modes: ${allowedTransportModes.join(', ')}
 - Helicopters are FORBIDDEN unless explicitly allowed
@@ -400,11 +425,13 @@ STRICT RULES (MUST FOLLOW):
 - Use realistic Nepal prices for meals, accommodation, and transport
 - Consider ${season} season weather and conditions in your recommendations
 - Mention season-specific tips (e.g., "Spring: Rhododendrons in bloom", "Monsoon: Carry rain gear")
+${healthIssue ? '- PRIORITIZE traveler safety given their health condition - adjust difficulty and include health precautions' : ''}
       Provide structured JSON only in this format:
       {
         "overview": "Brief trip overview",
         "season": "${season}",
         "seasonalInfo": "Season-specific notes and weather conditions",
+        ${healthIssue ? '"healthConsiderations": "Important health and safety notes for the traveler\'s condition",' : ''}
         "transportation": {
           "mode": "BUS | JEEP | TREK | FLIGHT | HELICOPTER",
           "estimatedCost": 0,
@@ -424,6 +451,7 @@ STRICT RULES (MUST FOLLOW):
                 "description": "Brief description",
                 "estimatedCost": 50,
                 "duration": "2 hours",
+                ${healthIssue ? '"difficultyLevel": "Easy/Moderate/Challenging",' : ''}
                 "trustLevel": "Unverified"
               }
             ],
@@ -446,7 +474,8 @@ STRICT RULES (MUST FOLLOW):
           "cost": ${applicableEntryFee},
           "description": "Entry fee details"
         },
-        "tips": ["Travel tip 1", "Season-specific tip", "Travel tip 3"],
+        ${healthIssue ? '"safetyPrecautions": ["Health-specific safety tip 1", "Nearest medical facility info", "Emergency contact info"],' : ''}
+        "tips": ["Travel tip 1", "Season-specific tip", ${healthIssue ? '"Health-related precaution",' : ''} "Travel tip 3"],
         "totalEstimatedCost": 1500
       }`;
 
@@ -878,6 +907,88 @@ STRICT RULES (MUST FOLLOW):
       // Get trips with pagination
       const trips = await this.prisma.trip.findMany({
         where,
+        take: Number(limit) + 1,
+        ...(cursor && {
+          cursor: { id: cursor },
+          skip: 1,
+        }),
+        orderBy: {
+          createdAt: 'desc',
+        },
+        include: {
+          post: {
+            select: {
+              id: true,
+              caption: true,
+              createdAt: true,
+            },
+          },
+        },
+      });
+
+      // Build pagination response
+      const hasNextPage = trips.length > Number(limit);
+      const items = hasNextPage ? trips.slice(0, -1) : trips;
+      const nextCursor =
+        hasNextPage && items.length > 0 ? items[items.length - 1]!.id : null;
+
+      HttpSuccess.ok(
+        res,
+        makeSuccessResponse(
+          {
+            items,
+            pagination: {
+              nextCursor,
+              hasNextPage,
+              count: items.length,
+            },
+          },
+          'Trips fetched successfully'
+        )
+      );
+    } catch (error) {
+      console.error('Error fetching trips:', error);
+      HttpErrors.serverError(res, error, 'Failed to fetch trips');
+    }
+  };
+
+  /**
+   * Get user's save trips
+   * GET /trip/save
+   */
+  public getsaveTrips = async (
+    req: AuthRequest,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const userId = req.userId;
+
+      if (!userId) {
+        HttpErrors.unauthorized(res);
+        return;
+      }
+
+      const {
+        status,
+        limit = 20,
+        cursor,
+      } = req.query as {
+        status?: TripStatus;
+        limit?: number;
+        cursor?: string;
+      };
+
+      // Build where clause
+      const where: any = { userId };
+      if (status) {
+        where.status = status;
+      }
+
+      // Get trips with pagination
+      const trips = await this.prisma.trip.findMany({
+        where: {
+          status: 'SAVED',
+        },
         take: Number(limit) + 1,
         ...(cursor && {
           cursor: { id: cursor },

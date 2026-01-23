@@ -18,7 +18,7 @@ import logger from '../helpers/logger';
 
 class AuthController {
   private readonly SALT_ROUNDS = Number(env.BCRYPT_SALT_ROUNDS);
-  private readonly ACCESS_TOKEN_EXPIRY = '15m';
+  private readonly ACCESS_TOKEN_EXPIRY = '24hrs';
   private readonly REFRESH_TOKEN_EXPIRY_DAYS = 7;
   constructor(private readonly prisma: PrismaClient) {}
 

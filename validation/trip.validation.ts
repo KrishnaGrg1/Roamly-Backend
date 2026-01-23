@@ -51,6 +51,13 @@ class TripValidation {
           .trim()
           .optional(),
         travelType: z.enum(['saarc', 'nepali', 'foreigner']),
+        healthIssue: z
+          .string()
+          .max(500, {
+            message: 'Health issue description must not exceed 500 characters',
+          })
+          .trim()
+          .optional(),
       })
       .refine(
         (data) => {
